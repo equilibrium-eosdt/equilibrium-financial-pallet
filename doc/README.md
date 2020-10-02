@@ -16,16 +16,16 @@ The period of the collected prices in minutes. Possible values are 1, 10, 60, 24
 By default = 1440 minutes \(1 day\). 
 
 ```rust
-Period: PricePeriod = PricePeriod::Day;
+PricePeriod: u32 = 1440;
 ```
 
-#### Data points
+#### Price Count
 
 Number of price data points stored and used for calculations \(length of price vector for each asset\).   
 Max = 180. By default = 30. 
 
 ```rust
-DataPoints: u32 = 30; 
+PriceCount: u32 = 30; 
 ```
 
 #### Return type
@@ -72,7 +72,7 @@ This section describes the storage of the financial pallet and how the relevant 
 Double mapping from Asset and Period to the array of prices of given DataPoints length 
 
 ```rust
-pub Prices get(fn prices): double_map hasher(blake2_128_concat) Asset, hasher(blake2_128_concat) PricePeriod => Vec<RealNumber>;
+pub Prices get(fn prices): double_map hasher(blake2_128_concat) Asset, hasher(blake2_128_concat) PricePeriod => Vec<FixedNumber>;
 ```
 
 #### LastUpdate
@@ -88,7 +88,7 @@ pub LastUpdate get(fn last_update): double_map hasher(blake2_128_concat) Asset, 
 Asset volatility mapping from Asset to Volatility figure. Stores current asset volatility or 0 if not enough price points for calculation. 
 
 ```rust
-pub Volatility get(fn volatility): map hasher(blake2_128_concat) Asset => RealNumber;
+pub Volatility get(fn volatility): map hasher(blake2_128_concat) Asset => FixedNumber;
 ```
 
 #### Correlation
@@ -96,7 +96,7 @@ pub Volatility get(fn volatility): map hasher(blake2_128_concat) Asset => RealNu
 Stores pairwise asset correlation. Double mapping from Asset and Asset to Correlation figure.
 
 ```rust
-pub Corellation get(fn corellation): double_map hasher(blake2_128_concat) Asset, hasher(blake2_128_concat) Asset => RealNumber;
+pub Corellation get(fn corellation): double_map hasher(blake2_128_concat) Asset, hasher(blake2_128_concat) Asset => FixedNumber;
 ```
 
 ## Functions
@@ -124,7 +124,7 @@ enum CalcReturnError {
 
 #### Declaration
 
-`fn calc_return(return_type: CalcReturnType, asset: Asset) -> Result<Vec<RealNumber>, CalcReturnError>;`
+`fn calc_return(return_type: CalcReturnType, asset: Asset) -> Result<Vec<FixedNumber>, CalcReturnError>;`
 
 #### _Function sequence_
 
@@ -145,7 +145,7 @@ Calculates volatility for specified `asset` given it's `returns`
 
 ####  _Returns_
 
-* RealNumber volatility number for given `asset`or NotEnoughPoints if not enough data points to perform calculation. 
+* FixedNumber volatility number for given `asset`or NotEnoughPoints if not enough data points to perform calculation. 
 
 #### _Errors_
 
@@ -157,7 +157,7 @@ enum CalcVolError {
 
 #### _Declaration_
 
-`fn calc_vol(vol_type: CalcVolatilityType, asset: Asset, ewma_length: u32, return_type: CalcReturnType) -> Result<RealNumber, CalcVolError>;`
+`fn calc_vol(vol_type: CalcVolatilityType, asset: Asset, ewma_length: u32, return_type: CalcReturnType) -> Result<FixedNumber, CalcVolError>;`
 
 #### _Function sequence_
 
@@ -182,7 +182,7 @@ Calculates pairwise correlations between `asset1` and `asset2`given their respec
 
 ####  _Returns_
 
-* RealNumber correlation number for a pair of assets or NotEnoughPoints if not enough data points to perform calculation. 
+* FixedNumber correlation number for a pair of assets or NotEnoughPoints if not enough data points to perform calculation. 
 
 #### _Errors_
 
@@ -194,7 +194,7 @@ enum CalcCorrError {
 
 #### _Declaration_
 
-`fn calc_corr(asset1: Asset, asset2: Asset, corr_type: CalcCorrelationType, ewma_length: u32, return_type: CalcReturnType) -> Result<RealNumber, CalcCorrError>;`
+`fn calc_corr(asset1: Asset, asset2: Asset, corr_type: CalcCorrelationType, ewma_length: u32, return_type: CalcReturnType) -> Result<FixedNumber, CalcCorrError>;`
 
 #### _Function sequence_
 
@@ -230,7 +230,7 @@ Calculates portfolio volatility for given `account_id` by evaluating its balance
 
 ####  _Returns_
 
-* RealNumber volatility number for portfolio of assets of given `account_id` or NotEnoughPoints if not enough data points to perform calculation. 
+* FixedNumber volatility number for portfolio of assets of given `account_id` or NotEnoughPoints if not enough data points to perform calculation. 
 
 #### _Errors_
 
@@ -242,7 +242,7 @@ enum CalcPortfVolError {
 
 #### _Declaration_
 
-`fn calc_prtf_vol(account_id: AccountId) -> Result<RealNumber, CalcPortfVolError>;`  
+`fn calc_prtf_vol(account_id: AccountId) -> Result<FixedNumber, CalcPortfVolError>;`  
 
 
 #### _Function sequence_
@@ -261,7 +261,7 @@ NB! polkadot's rust implementation might not have libraries to work with distrib
 
 ####  _Returns_
 
-* RealNumber VAR number for portfolio of assets of given `account_id` or NotEnoughPoints if not enough data points to perform calculation. 
+* FixedNumber VAR number for portfolio of assets of given `account_id` or NotEnoughPoints if not enough data points to perform calculation. 
 
 #### _Errors_
 
@@ -273,7 +273,7 @@ enum CalcPortfVarError {
 
 #### _Declaration_
 
-`fn calc_portf_var(account_id: AccountId, return_type: CalcReturnType, z_score: u32) -> Result<RealNumber, CalcPortfVarError>;`
+`fn calc_portf_var(account_id: AccountId, return_type: CalcReturnType, z_score: u32) -> Result<FixedNumber, CalcPortfVarError>;`
 
 #### _Function sequence_
 
