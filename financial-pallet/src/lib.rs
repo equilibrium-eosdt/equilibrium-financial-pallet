@@ -19,8 +19,7 @@
 use frame_support::{decl_module, decl_storage, decl_event, decl_error, ensure};
 use frame_support::traits::{Get, UnixTime};
 use frame_support::codec::{Codec, Decode, Encode};
-use frame_support::dispatch::DispatchError;
-use crate::common::{Asset};
+use frame_support::dispatch::{DispatchError, Parameter};
 use financial_primitives::capvec::CapVec;
 use financial_primitives::OnPriceSet;
 use core::time::Duration;
@@ -39,8 +38,6 @@ mod mock;
 #[cfg(test)]
 mod tests;
 
-pub mod common;
-
 // Type of constants for transcendental operations declared in substrate_fixed crate
 type ConstType = I9F23;
 
@@ -49,6 +46,7 @@ pub trait Trait: frame_system::Trait {
 	type UnixTime: UnixTime;
 	type PriceCount: Get<u32>;
 	type PricePeriod: Get<u32>;
+	type Asset: Parameter + Copy;
 	type FixedNumberBits: Copy + ToFixed + AddAssign + BitOrAssign + ShlAssign;
 	type FixedNumber: Clone + Copy + Codec + FixedSigned<Bits = Self::FixedNumberBits> + PartialOrd<ConstType> + From<ConstType>;
 	type Price: Clone + From<Self::FixedNumber> + Into<Self::FixedNumber>;
@@ -62,13 +60,13 @@ pub struct PriceUpdate<P> {
 }
 
 decl_storage! {
-	trait Store for Module<T: Trait> as TemplateModule {
-		Updates get(fn updates): map hasher(blake2_128_concat) Asset => Option<PriceUpdate<T::FixedNumber>>;
-		Prices get(fn prices): map hasher(blake2_128_concat) Asset => CapVec<T::FixedNumber>;
+	trait Store for Module<T: Trait> as FinancialModule {
+		Updates get(fn updates): map hasher(blake2_128_concat) T::Asset => Option<PriceUpdate<T::FixedNumber>>;
+		Prices get(fn prices): map hasher(blake2_128_concat) T::Asset => CapVec<T::FixedNumber>;
 	}
 
 	add_extra_genesis {
-		config(prices): Vec<(Asset, Vec<T::Price>)>;
+		config(prices): Vec<(T::Asset, Vec<T::Price>)>;
 
 		build(|config| {
 			let price_count = T::PriceCount::get();
@@ -262,10 +260,10 @@ impl<T: Trait> From<GetNewPricesError> for Error<T> {
 }
 
 impl<T: Trait> OnPriceSet for Module<T> {
-	type Asset = Asset;
+	type Asset = T::Asset;
 	type Price = T::Price;
 
-	fn on_price_set(asset: Asset, value: T::Price) -> Result<(), DispatchError> {
+	fn on_price_set(asset: T::Asset, value: T::Price) -> Result<(), DispatchError> {
 		let value: T::FixedNumber = value.into();
 		let now = T::UnixTime::now();
 		let price_count = T::PriceCount::get();
@@ -334,12 +332,13 @@ pub enum CalcCorrelationType {
 }
 
 pub trait Financial {
+	type Asset;
 	type Price;
 	type AccountId;
 
-	fn calc_return(return_type: CalcReturnType, asset: Asset) -> Result<Vec<Self::Price>, DispatchError>;
-	fn calc_vol(volatility_type: CalcVolatilityType, asset: Asset, ewma_length: u32, return_type: CalcReturnType) -> Result<Self::Price, DispatchError>;
-	fn calc_corr(asset1: Asset, asset2: Asset, corr_type: CalcCorrelationType, ewma_length: u32, return_type: CalcReturnType) -> Result<Self::Price, DispatchError>;
+	fn calc_return(return_type: CalcReturnType, asset: Self::Asset) -> Result<Vec<Self::Price>, DispatchError>;
+	fn calc_vol(volatility_type: CalcVolatilityType, asset: Self::Asset, ewma_length: u32, return_type: CalcReturnType) -> Result<Self::Price, DispatchError>;
+	fn calc_corr(asset1: Self::Asset, asset2: Self::Asset, corr_type: CalcCorrelationType, ewma_length: u32, return_type: CalcReturnType) -> Result<Self::Price, DispatchError>;
 	fn calc_portf_vol(account_id: Self::AccountId) -> Result<Self::Price, DispatchError>;
 	fn calc_portf_var(account_id: Self::AccountId, return_type: CalcReturnType, z_score: u32) -> Result<Self::Price, DispatchError>;
 }
@@ -418,10 +417,11 @@ impl<T: Trait> From<CalcReturnError> for Error<T> {
 }
 
 impl<T: Trait> Financial for Module<T> {
+	type Asset = T::Asset;
 	type Price = T::Price;
 	type AccountId = <T as frame_system::Trait>::AccountId;
 
-	fn calc_return(return_type: CalcReturnType, asset: Asset) -> Result<Vec<T::Price>, DispatchError> {
+	fn calc_return(return_type: CalcReturnType, asset: T::Asset) -> Result<Vec<T::Price>, DispatchError> {
 		let prices: Vec<_> = Prices::<T>::get(asset).iter().cloned().collect();
 
 		let result = calc_return_vec(return_type, prices).map_err(Into::<Error<T>>::into)?;
@@ -429,11 +429,11 @@ impl<T: Trait> Financial for Module<T> {
 		Ok(result)
 	}
 
-	fn calc_vol(_volatility_type: CalcVolatilityType, _asset: Asset, _ewma_length: u32, _return_type: CalcReturnType) -> Result<Self::Price, DispatchError> {
+	fn calc_vol(_volatility_type: CalcVolatilityType, _asset: T::Asset, _ewma_length: u32, _return_type: CalcReturnType) -> Result<Self::Price, DispatchError> {
 		Err(Error::<T>::NotImplemented.into())
 	}
 
-	fn calc_corr(_asset1: Asset, _asset2: Asset, _corr_type: CalcCorrelationType, _ewma_length: u32, _return_type: CalcReturnType) -> Result<Self::Price, DispatchError> {
+	fn calc_corr(_asset1: T::Asset, _asset2: T::Asset, _corr_type: CalcCorrelationType, _ewma_length: u32, _return_type: CalcReturnType) -> Result<Self::Price, DispatchError> {
 		Err(Error::<T>::NotImplemented.into())
 	}
 

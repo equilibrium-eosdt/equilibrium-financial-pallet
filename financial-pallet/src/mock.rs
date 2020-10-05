@@ -17,6 +17,7 @@ use crate::{Module, Trait};
 use sp_core::H256;
 use frame_support::{impl_outer_origin, parameter_types, weights::Weight};
 use frame_support::traits::UnixTime;
+use frame_support::codec::{Decode, Encode};
 use sp_runtime::{
 	traits::{BlakeTwo256, IdentityLookup}, testing::Header, Perbill,
 };
@@ -24,7 +25,6 @@ use frame_system as system;
 use core::time::Duration;
 use substrate_fixed::types::I64F64;
 use std::cell::RefCell;
-use crate::common::Asset;
 
 impl_outer_origin! {
 	pub enum Origin for Test {}
@@ -95,12 +95,19 @@ impl Trait for Test {
 	type PriceCount = PriceCount;
 	type PricePeriod = PricePeriod;
 	type UnixTime = TestUnixTime;
+	type Asset = Asset;
 	type FixedNumberBits = i128;
 	type FixedNumber = FixedNumber;
 	type Price = FixedNumber;
 }
 
 pub type FinancialModule = Module<Test>;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Encode, Decode)]
+pub enum Asset {
+	Btc,
+	Eos,
+}
 
 pub fn new_test_ext() -> sp_io::TestExternalities {
 	let mut t = system::GenesisConfig::default().build_storage::<Test>().unwrap();

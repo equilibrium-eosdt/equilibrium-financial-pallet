@@ -16,7 +16,7 @@
 use crate::mock::*;
 use frame_support::assert_ok;
 use crate::{Financial, CalcReturnType};
-use crate::common::{Asset, OnPriceSet};
+use financial_primitives::OnPriceSet;
 use approx::assert_abs_diff_eq;
 use substrate_fixed::traits::LossyInto;
 use chrono::prelude::*;
