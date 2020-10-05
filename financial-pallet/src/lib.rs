@@ -13,14 +13,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//#![warn(missing_docs)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use frame_support::{decl_module, decl_storage, decl_event, decl_error, ensure};
 use frame_support::traits::{Get, UnixTime};
 use frame_support::codec::{Codec, Decode, Encode};
 use frame_support::dispatch::DispatchError;
-use crate::common::{Asset, OnPriceSet};
-use crate::capvec::CapVec;
+use crate::common::{Asset};
+use financial_primitives::capvec::CapVec;
+use financial_primitives::OnPriceSet;
 use core::time::Duration;
 use sp_std::prelude::Vec;
 use sp_std::convert::TryInto;
@@ -38,7 +40,6 @@ mod mock;
 mod tests;
 
 pub mod common;
-pub mod capvec;
 
 // Type of constants for transcendental operations declared in substrate_fixed crate
 type ConstType = I9F23;
@@ -261,6 +262,7 @@ impl<T: Trait> From<GetNewPricesError> for Error<T> {
 }
 
 impl<T: Trait> OnPriceSet for Module<T> {
+	type Asset = Asset;
 	type Price = T::Price;
 
 	fn on_price_set(asset: Asset, value: T::Price) -> Result<(), DispatchError> {

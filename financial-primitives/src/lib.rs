@@ -13,14 +13,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::mock::*;
-use frame_support::{assert_ok};
-use financial::common::Asset;
+//#![warn(missing_docs)]
+#![cfg_attr(not(feature = "std"), no_std)]
 
-#[test]
-fn set_price_is_visible_through_storage() {
-	new_test_ext().execute_with(|| {
-		assert_ok!(OracleModule::set_price(Origin::signed(1), Asset::Btc, 42));
-		assert_eq!(OracleModule::price_points(Asset::Btc), 42);
-	});
+pub mod capvec;
+
+use frame_support::dispatch::DispatchError;
+
+pub struct Asset;
+
+pub trait OnPriceSet {
+    type Asset;
+    type Price;
+
+    fn on_price_set(asset: Self::Asset, value: Self::Price) -> Result<(), DispatchError>;
 }

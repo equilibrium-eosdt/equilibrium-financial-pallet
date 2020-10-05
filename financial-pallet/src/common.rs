@@ -17,7 +17,6 @@
 
 use core::slice::Iter;
 use frame_support::codec::{Decode, Encode};
-use frame_support::dispatch::DispatchError;
 #[cfg(feature = "std")]
 use serde::{Deserialize, Serialize};
 
@@ -43,14 +42,4 @@ impl Asset {
         static ASSETS: [Asset; 5] = [Asset::Usd, Asset::Eq, Asset::Eth, Asset::Btc, Asset::Eos];
         ASSETS.iter()
     }
-}
-
-pub trait PriceGetter {
-    type Price;
-    fn get_price(asset: Asset) -> Self::Price;
-}
-
-pub trait OnPriceSet {
-    type Price;
-    fn on_price_set(asset: Asset, value: Self::Price) -> Result<(), DispatchError>;
 }
