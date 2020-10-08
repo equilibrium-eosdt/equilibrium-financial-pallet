@@ -267,6 +267,14 @@ mod new_prices {
 
 		assert_eq!(actual, expected);
 	}
+
+	#[test]
+	fn max_periods_is_one() {
+		let actual = get_new_prices::<u32>(Some(555), 123, 3, 1);
+		let expected = Ok(vec![123]);
+
+		assert_eq!(actual, expected);
+	}
 }
 
 #[cfg(test)]
@@ -282,6 +290,16 @@ mod calc_return {
 		let x2 = FixedNumber::from_num(6);
 		let actual = calc_return(x1, x2);
 		let expected = Ok(FixedNumber::from_num(-0.25));
+
+		assert_eq!(actual, expected);
+	}
+
+	#[test]
+	fn calc_return_valid_positive() {
+		let x1 = FixedNumber::from_num(8);
+		let x2 = FixedNumber::from_num(10);
+		let actual = calc_return(x1, x2);
+		let expected = Ok(FixedNumber::from_num(0.25));
 
 		assert_eq!(actual, expected);
 	}
