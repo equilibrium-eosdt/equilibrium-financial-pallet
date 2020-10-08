@@ -267,6 +267,14 @@ mod new_prices {
 
 		assert_eq!(actual, expected);
 	}
+
+	#[test]
+	fn max_periods_is_one() {
+		let actual = get_new_prices::<u32>(Some(555), 123, 3, 1);
+		let expected = Ok(vec![123]);
+
+		assert_eq!(actual, expected);
+	}
 }
 
 #[cfg(test)]

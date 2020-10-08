@@ -23,6 +23,7 @@ use frame_support::dispatch::{DispatchError, Parameter};
 use financial_primitives::capvec::CapVec;
 use financial_primitives::OnPriceSet;
 use core::time::Duration;
+use sp_std::cmp::min;
 use sp_std::prelude::Vec;
 use sp_std::convert::TryInto;
 use sp_std::iter::Iterator;
@@ -232,17 +233,12 @@ fn get_new_prices<P: Clone>(last_price: Option<P>, new_price: P, empty_periods: 
 			Ok(vec![new_price])
 		},
 		Some(last_price) => {
-			let mut new_prices: Vec<P> = Vec::new();
+			// Calculate how many values to pre-populate the array with
+			// We will pre-fill up to `max_periods` elements (leaving out one for the new price)
+			let prices_size = min(empty_periods, max_periods.checked_sub(1).ok_or(GetNewPricesError::Overflow)?) as usize;
 
-			let empty_periods = if empty_periods < max_periods {
-				empty_periods
-			} else {
-				max_periods.checked_sub(1).ok_or(GetNewPricesError::Overflow)?
-			};
-
-			for _ in 0..empty_periods {
-				new_prices.push(last_price.clone());
-			}
+			// Init the vector filled with last_price
+			let mut new_prices = vec![last_price.clone(); prices_size];
 
 			new_prices.push(new_price);
 
