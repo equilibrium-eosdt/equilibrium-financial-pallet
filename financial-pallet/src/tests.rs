@@ -295,6 +295,16 @@ mod calc_return {
 	}
 
 	#[test]
+	fn calc_return_valid_positive() {
+		let x1 = FixedNumber::from_num(8);
+		let x2 = FixedNumber::from_num(10);
+		let actual = calc_return(x1, x2);
+		let expected = Ok(FixedNumber::from_num(0.25));
+
+		assert_eq!(actual, expected);
+	}
+
+	#[test]
 	fn calc_return_x1_is_zero() {
 		let x1 = FixedNumber::from_num(0);
 		let x2 = FixedNumber::from_num(6);
