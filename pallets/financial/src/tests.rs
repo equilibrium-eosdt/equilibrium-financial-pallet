@@ -15,7 +15,8 @@
 
 use crate::mock::*;
 use frame_support::assert_ok;
-use crate::{Financial, CalcReturnType};
+use frame_support::dispatch::DispatchError;
+use crate::{Financial, CalcReturnType, PriceUpdate, Error};
 use financial_primitives::OnPriceSet;
 use approx::assert_abs_diff_eq;
 use substrate_fixed::traits::LossyInto;
@@ -571,5 +572,355 @@ fn calc_linear_return_for_btc_using_some_oracle_prices() {
 		for (a, e) in actual.into_iter().zip(expected.into_iter()) {
 			assert_abs_diff_eq!(a, e, epsilon = 1e-8);
 		}
+	});
+}
+
+#[test]
+fn initial_prices_state_with_empty_genesis() {
+	new_test_ext_empty_storage().execute_with(|| {
+		let asset = Asset::Btc;
+
+		let updates = FinancialModule::updates(asset);
+		let expected_updates = None;
+
+		let prices: Vec<_> = FinancialModule::prices(asset).iter().copied().collect();
+		let expected_prices: Vec<FixedNumber> = vec![];
+
+		let prices_cap = FinancialModule::prices(asset).len_cap();
+		let expected_price_cap = 0;
+
+		assert_eq!(updates, expected_updates);
+		assert_eq!(prices, expected_prices);
+		assert_eq!(prices_cap, expected_price_cap);
+	});
+}
+
+#[test]
+fn initial_prices_state_with_nonempty_genesis() {
+	new_test_ext().execute_with(|| {
+		let asset = Asset::Btc;
+
+		let updates = FinancialModule::updates(asset);
+		let expected_updates = None;
+
+		let prices: Vec<_> = FinancialModule::prices(asset).iter().copied().collect();
+		let expected_prices: Vec<FixedNumber> = initial_btc_prices()
+			.into_iter().map(FixedNumber::from_num).collect();
+
+		let prices_cap = FinancialModule::prices(asset).len_cap();
+		let expected_price_cap = PriceCount::get();
+
+		assert_eq!(updates, expected_updates);
+		assert_eq!(prices, expected_prices);
+		assert_eq!(prices_cap, expected_price_cap);
+	});
+}
+
+#[test]
+fn first_price_with_empty_genesis() {
+	new_test_ext_empty_storage().execute_with(|| {
+		let asset = Asset::Btc;
+
+		let price = FixedNumber::from_num(9_000);
+
+		let period_start = create_duration(2020, 9, 14, 12, 0, 0);
+		let now = create_duration(2020, 9, 14, 12, 31, 0);
+		set_now(now);
+
+		assert_ok!(<FinancialModule as OnPriceSet>::on_price_set(asset, price));
+
+		let updates = FinancialModule::updates(asset);
+		let expected_updates = Some(PriceUpdate::new(period_start, now, price));
+
+		let prices: Vec<_> = FinancialModule::prices(asset).iter().copied().collect();
+		let expected_prices: Vec<FixedNumber> = vec![price];
+
+		let prices_cap = FinancialModule::prices(asset).len_cap();
+		let expected_price_cap = PriceCount::get();
+
+		assert_eq!(updates, expected_updates);
+		assert_eq!(prices, expected_prices);
+		assert_eq!(prices_cap, expected_price_cap);
+	});
+}
+
+#[test]
+fn new_price_is_in_the_past() {
+	new_test_ext_empty_storage().execute_with(|| {
+		let asset = Asset::Btc;
+
+		let price = FixedNumber::from_num(9_000);
+
+		let period_start = create_duration(2020, 9, 14, 12, 0, 0);
+		let now = create_duration(2020, 9, 14, 12, 31, 0);
+		set_now(now);
+
+		assert_ok!(<FinancialModule as OnPriceSet>::on_price_set(asset, price));
+
+		let past_price = FixedNumber::from_num(7_300);
+		let past_now = create_duration(2020, 9, 13, 0, 3, 0);
+		set_now(past_now);
+
+		let result = <FinancialModule as OnPriceSet>::on_price_set(asset, past_price);
+		let expected_result: Result<(), DispatchError> = Err(Error::<Test>::PeriodIsInThePast.into());
+		assert_eq!(result, expected_result);
+
+		let updates = FinancialModule::updates(asset);
+		let expected_updates = Some(PriceUpdate::new(period_start, now, price));
+
+		let prices: Vec<_> = FinancialModule::prices(asset).iter().copied().collect();
+		let expected_prices: Vec<FixedNumber> = vec![price];
+
+		let prices_cap = FinancialModule::prices(asset).len_cap();
+		let expected_price_cap = PriceCount::get();
+
+		assert_eq!(updates, expected_updates);
+		assert_eq!(prices, expected_prices);
+		assert_eq!(prices_cap, expected_price_cap);
+	});
+}
+
+#[test]
+fn new_price_is_in_current_period() {
+	new_test_ext_empty_storage().execute_with(|| {
+		let asset = Asset::Btc;
+
+		let price = FixedNumber::from_num(9_000);
+
+		let period_start = create_duration(2020, 9, 14, 12, 0, 0);
+		let now = create_duration(2020, 9, 14, 12, 31, 0);
+		set_now(now);
+
+		assert_ok!(<FinancialModule as OnPriceSet>::on_price_set(asset, price));
+
+		let same_period_price = FixedNumber::from_num(9_100);
+		let same_period_now = create_duration(2020, 9, 14, 12, 48, 0);
+		set_now(same_period_now);
+
+		assert_ok!(<FinancialModule as OnPriceSet>::on_price_set(asset, same_period_price));
+
+		let updates = FinancialModule::updates(asset);
+		let expected_updates = Some(PriceUpdate::new(
+			period_start,
+			same_period_now,
+			same_period_price
+		));
+
+		let prices: Vec<_> = FinancialModule::prices(asset).iter().copied().collect();
+		let expected_prices: Vec<FixedNumber> = vec![price];
+
+		let prices_cap = FinancialModule::prices(asset).len_cap();
+		let expected_price_cap = PriceCount::get();
+
+		assert_eq!(updates, expected_updates);
+		assert_eq!(prices, expected_prices);
+		assert_eq!(prices_cap, expected_price_cap);
+	});
+}
+
+#[test]
+fn new_price_is_in_next_period() {
+	new_test_ext_empty_storage().execute_with(|| {
+		let asset = Asset::Btc;
+
+		let price = FixedNumber::from_num(9_000);
+
+		let now = create_duration(2020, 9, 14, 12, 31, 0);
+		set_now(now);
+
+		assert_ok!(<FinancialModule as OnPriceSet>::on_price_set(asset, price));
+
+		let next_period_start = create_duration(2020, 9, 14, 13, 0, 0);
+		let next_period_price = FixedNumber::from_num(9_100);
+		let next_period_now = create_duration(2020, 9, 14, 13, 27, 0);
+		set_now(next_period_now);
+
+		assert_ok!(<FinancialModule as OnPriceSet>::on_price_set(asset, next_period_price));
+
+		let updates = FinancialModule::updates(asset);
+		let expected_updates = Some(PriceUpdate::new(
+			next_period_start,
+			next_period_now,
+			next_period_price,
+		));
+
+		let prices: Vec<_> = FinancialModule::prices(asset).iter().copied().collect();
+		let expected_prices: Vec<FixedNumber> = vec![price, next_period_price];
+
+		let prices_cap = FinancialModule::prices(asset).len_cap();
+		let expected_price_cap = PriceCount::get();
+
+		assert_eq!(updates, expected_updates);
+		assert_eq!(prices, expected_prices);
+		assert_eq!(prices_cap, expected_price_cap);
+	});
+}
+
+#[test]
+fn new_price_is_a_few_periods_ahead() {
+	new_test_ext_empty_storage().execute_with(|| {
+		let asset = Asset::Btc;
+
+		let price = FixedNumber::from_num(9_000);
+
+		let now = create_duration(2020, 9, 14, 12, 31, 0);
+		set_now(now);
+
+		assert_ok!(<FinancialModule as OnPriceSet>::on_price_set(asset, price));
+
+		let new_period_start = create_duration(2020, 9, 14, 16, 0, 0);
+		let new_period_price = FixedNumber::from_num(9_100);
+		let new_period_now = create_duration(2020, 9, 14, 16, 27, 0);
+		set_now(new_period_now);
+
+		assert_ok!(<FinancialModule as OnPriceSet>::on_price_set(asset, new_period_price));
+
+		let updates = FinancialModule::updates(asset);
+		let expected_updates = Some(PriceUpdate::new(
+			new_period_start,
+			new_period_now,
+			new_period_price,
+		));
+
+		let prices: Vec<_> = FinancialModule::prices(asset).iter().copied().collect();
+		let expected_prices: Vec<FixedNumber> = vec![
+			price,
+			price,
+			price,
+			price,
+			new_period_price,
+		];
+
+		let prices_cap = FinancialModule::prices(asset).len_cap();
+		let expected_price_cap = PriceCount::get();
+
+		assert_eq!(updates, expected_updates);
+		assert_eq!(prices, expected_prices);
+		assert_eq!(prices_cap, expected_price_cap);
+	});
+}
+
+#[test]
+fn new_price_is_many_periods_ahead() {
+	new_test_ext_empty_storage().execute_with(|| {
+		let asset = Asset::Btc;
+
+		let price = FixedNumber::from_num(9_000);
+
+		let now = create_duration(2020, 9, 14, 12, 31, 0);
+		set_now(now);
+
+		assert_ok!(<FinancialModule as OnPriceSet>::on_price_set(asset, price));
+
+		let new_period_start = create_duration(2020, 10, 3, 22, 0, 0);
+		let new_period_price = FixedNumber::from_num(9_100);
+		let new_period_now = create_duration(2020, 10, 3, 22, 27, 0);
+		set_now(new_period_now);
+
+		assert_ok!(<FinancialModule as OnPriceSet>::on_price_set(asset, new_period_price));
+
+		let updates = FinancialModule::updates(asset);
+		let expected_updates = Some(PriceUpdate::new(
+			new_period_start,
+			new_period_now,
+			new_period_price,
+		));
+
+		let prices: Vec<_> = FinancialModule::prices(asset).iter().copied().collect();
+		let mut expected_prices: Vec<FixedNumber> = vec![price; PriceCount::get() as usize - 1];
+		expected_prices.push(new_period_price);
+
+		let prices_cap = FinancialModule::prices(asset).len_cap();
+		let expected_price_cap = PriceCount::get();
+
+		assert_eq!(updates, expected_updates);
+		assert_eq!(prices, expected_prices);
+		assert_eq!(prices_cap, expected_price_cap);
+	});
+}
+
+#[test]
+fn wrong_now_in_the_distant_future() {
+	new_test_ext_empty_storage().execute_with(|| {
+		let asset = Asset::Btc;
+
+		let price = FixedNumber::from_num(9_000);
+
+		let period_start = create_duration(2020, 9, 14, 12, 0, 0);
+		let now = create_duration(2020, 9, 14, 12, 31, 0);
+		set_now(now);
+
+		assert_ok!(<FinancialModule as OnPriceSet>::on_price_set(asset, price));
+
+		let distant_future_price = FixedNumber::from_num(9_100);
+		let distant_future_now = Duration::from_secs(u64::MAX);
+		set_now(distant_future_now);
+
+		let result = <FinancialModule as OnPriceSet>::on_price_set(asset, distant_future_price);
+		let expected_result: Result<(), DispatchError> = Err(Error::<Test>::Overflow.into());
+		assert_eq!(result, expected_result);
+
+		let updates = FinancialModule::updates(asset);
+		let expected_updates = Some(PriceUpdate::new(
+			period_start,
+			now,
+			price,
+		));
+
+		let prices: Vec<_> = FinancialModule::prices(asset).iter().copied().collect();
+		let expected_prices: Vec<FixedNumber> = vec![price];
+
+		let prices_cap = FinancialModule::prices(asset).len_cap();
+		let expected_price_cap = PriceCount::get();
+
+		assert_eq!(updates, expected_updates);
+		assert_eq!(prices, expected_prices);
+		assert_eq!(prices_cap, expected_price_cap);
+	});
+}
+
+#[test]
+fn new_price_has_arravied_while_prices_countainer_is_full() {
+	new_test_ext_empty_storage().execute_with(|| {
+		let asset = Asset::Btc;
+
+		let prices: Vec<_> = vec![
+			1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+		].into_iter().map(FixedNumber::from_num).collect();
+ 
+		let mut now = create_duration(2020, 9, 14, 12, 31, 0);
+		set_now(now);
+
+		for &p in prices.iter() {
+			let result = <FinancialModule as OnPriceSet>::on_price_set(asset, p);
+
+			assert_ok!(result);
+
+			now = now + Duration::from_secs(60 * 60);
+			set_now(now);
+		}
+
+		let new_period_start = create_duration(2020, 9, 14, 22, 0, 0);
+		let new_period_price = FixedNumber::from_num(11);
+
+		assert_ok!(<FinancialModule as OnPriceSet>::on_price_set(asset, new_period_price));
+
+		let updates = FinancialModule::updates(asset);
+		let expected_updates = Some(PriceUpdate::new(
+			new_period_start,
+			now,
+			new_period_price,
+		));
+
+		let actual_prices: Vec<_> = FinancialModule::prices(asset).iter().copied().collect();
+		let mut expected_prices: Vec<_> = prices[1..].iter().copied().collect();
+		expected_prices.push(new_period_price);
+
+		let prices_cap = FinancialModule::prices(asset).len_cap();
+		let expected_price_cap = PriceCount::get();
+
+		assert_eq!(updates, expected_updates);
+		assert_eq!(actual_prices, expected_prices);
+		assert_eq!(prices_cap, expected_price_cap);
 	});
 }

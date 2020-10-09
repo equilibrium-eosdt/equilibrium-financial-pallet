@@ -109,39 +109,51 @@ pub enum Asset {
 	Eos,
 }
 
+pub fn initial_btc_prices() -> Vec<f64> {
+	vec![
+		7_117.21,
+		7_429.72,
+		7_550.90,
+		7_569.94,
+		7_679.87,
+		7_795.60,
+		7_807.06,
+		8_801.04,
+		8_658.55,
+		8_864.77,
+	]
+}
+
+pub fn initial_eos_prices() -> Vec<f64> {
+	vec![
+		2.62,
+		2.67,
+		2.72,
+		2.72,
+		2.74,
+		2.75,
+		2.78,
+		3.02,
+		2.83,
+		2.89,
+	]
+}
+
 pub fn new_test_ext() -> sp_io::TestExternalities {
 	let mut t = system::GenesisConfig::default().build_storage::<Test>().unwrap();
 
 	crate::GenesisConfig::<Test> {
 		prices: vec![
-			(Asset::Btc, vec![
-				7_117.21,
-				7_429.72,
-				7_550.90,
-				7_569.94,
-				7_679.87,
-				7_795.60,
-				7_807.06,
-				8_801.04,
-				8_658.55,
-				8_864.77,
-			].into_iter().map(FixedNumber::from_num).collect()),
-			(Asset::Eos, vec![
-				2.62,
-				2.67,
-				2.72,
-				2.72,
-				2.74,
-				2.75,
-				2.78,
-				3.02,
-				2.83,
-				2.89,
-			].into_iter().map(FixedNumber::from_num).collect()),
+			(Asset::Btc, initial_btc_prices().into_iter().map(FixedNumber::from_num).collect()),
+			(Asset::Eos, initial_eos_prices().into_iter().map(FixedNumber::from_num).collect()),
 		],
 	}
 		.assimilate_storage(&mut t)
 		.unwrap();
 
 	t.into()
+}
+
+pub fn new_test_ext_empty_storage() -> sp_io::TestExternalities {
+	system::GenesisConfig::default().build_storage::<Test>().unwrap().into()
 }

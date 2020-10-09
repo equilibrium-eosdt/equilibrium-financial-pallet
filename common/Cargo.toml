@@ -1,0 +1,30 @@
+[package]
+authors = ['equilibrium']
+edition = '2018'
+name = 'common'
+version = '0.1.0'
+
+[dependencies.frame-support]
+default-features = false
+git = "https://github.com/paritytech/substrate.git"
+tag = "v2.0.0-rc6"
+version = "2.0.0-rc6"
+
+[dependencies.serde]
+version = "1.0.101"
+optional = true
+features = ["derive"]
+
+[dependencies.codec]
+default-features = false
+features = ["derive"]
+package = "parity-scale-codec"
+version = "1.3.4"
+
+[features]
+default = ['std']
+std = [
+    "serde",
+    "frame-support/std",
+    "codec/std",
+]

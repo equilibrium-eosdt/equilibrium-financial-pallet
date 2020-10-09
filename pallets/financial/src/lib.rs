@@ -53,11 +53,22 @@ pub trait Trait: frame_system::Trait {
 	type Price: Clone + From<Self::FixedNumber> + Into<Self::FixedNumber>;
 }
 
-#[derive(Encode, Decode, Clone, Default)]
+#[derive(Encode, Decode, Clone, Default, PartialEq, Eq, Debug)]
 pub struct PriceUpdate<P> {
 	period_start: Duration,
 	time: Duration,
 	price: P,
+}
+
+impl<P> PriceUpdate<P> {
+	#[cfg(test)]
+	fn new(period_start: Duration, time: Duration, price: P) -> PriceUpdate<P> {
+		PriceUpdate {
+			period_start,
+			time,
+			price,
+		}
+	}
 }
 
 decl_storage! {
@@ -186,18 +197,18 @@ impl PricePeriod {
 				let (current_start, periods_elapsed) = self.get_curr_period_info(last_start, now)?;
 
 				if periods_elapsed < 0 {
-					// current period is in the past
+					// Current period is in the past
 
 					Err(PricePeriodError::PeriodIsInThePast)
 				} else if periods_elapsed == 0 {
-					// period is not changed
+					// Period is not changed
 
 					Ok(PeriodChange {
 						period_start: last_start,
 						action: PeriodAction::RemainsUnchanged,
 					})
 				} else {
-					// period is changed
+					// Period is changed
 					
 					let empty_periods = (periods_elapsed - 1) as u32;
 
