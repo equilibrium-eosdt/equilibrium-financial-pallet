@@ -84,4 +84,5 @@ std = [
     "sp-runtime/std",
     "substrate-fixed/std",
     "sp-std/std",
+    "financial-primitives/std",
 ]

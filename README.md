@@ -40,6 +40,33 @@ cargo tarpaulin -v
 
 You can see code coverage report [here](docs/tarpaulin-report.html).
 
+## Running the Node
+
+First of all please ensure that your development chain's state is empty:
+
+```bash
+cargo run --bin node-template purge-chain --dev
+```
+
+Now you can start the development chain:
+
+```bash
+cargo run --bin node-template --dev
+```
+
+### Connecting Explorer
+
+It can be very useful to connect UI to the node you just started.
+
+To do this open https://polkadot.js.org/apps/#/explorer in your browser first.
+
+Follow these steps to register required custom types:
+
+* In the main menu choose Settings tab;
+* In the Settings submenu choose Developer tab;
+* Copy content of the [custom-types.json](custom-types.json) file into text box on the page;
+* Press Save button.
+
 ## Development Roadmap
 
 | Milestone # | Description |

@@ -707,9 +707,11 @@ dependencies = [
 name = "common"
 version = "0.1.0"
 dependencies = [
+ "financial-primitives",
  "frame-support",
  "parity-scale-codec",
  "serde",
+ "sp-std",
 ]
 
 [[package]]

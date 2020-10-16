@@ -19,6 +19,7 @@
 pub mod capvec;
 
 use frame_support::dispatch::DispatchError;
+use sp_std::iter::Iterator;
 
 pub struct Asset;
 
@@ -27,4 +28,10 @@ pub trait OnPriceSet {
     type Price;
 
     fn on_price_set(asset: Self::Asset, value: Self::Price) -> Result<(), DispatchError>;
+}
+
+pub trait IntoTypeIterator: Sized {
+    type Iterator: Iterator<Item = Self>;
+
+    fn into_type_iter() -> Self::Iterator;
 }

@@ -25,6 +25,7 @@ use frame_system as system;
 use core::time::Duration;
 use substrate_fixed::types::I64F64;
 use std::cell::RefCell;
+use financial_primitives::IntoTypeIterator;
 
 impl_outer_origin! {
 	pub enum Origin for Test {}
@@ -107,6 +108,17 @@ pub type FinancialModule = Module<Test>;
 pub enum Asset {
 	Btc,
 	Eos,
+}
+
+impl IntoTypeIterator for Asset {
+    type Iterator = sp_std::vec::IntoIter<Self>;
+
+    fn into_type_iter() -> Self::Iterator {
+        vec![
+            Asset::Btc,
+            Asset::Eos,
+        ].into_iter()
+    }
 }
 
 pub fn initial_btc_prices() -> Vec<f64> {

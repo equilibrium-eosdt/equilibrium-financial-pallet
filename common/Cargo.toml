@@ -21,10 +21,24 @@ features = ["derive"]
 package = "parity-scale-codec"
 version = "1.3.4"
 
+[dependencies.financial-primitives]
+default-features = false
+package = "financial-primitives"
+path = "../financial-primitives"
+version = "0.1.0"
+
+[dependencies.sp-std]
+default-features = false
+git = "https://github.com/paritytech/substrate.git"
+tag = "v2.0.0-rc6"
+version = "2.0.0-rc6"
+
 [features]
 default = ['std']
 std = [
     "serde",
     "frame-support/std",
     "codec/std",
+    "financial-primitives/std",
+    "sp-std/std",
 ]

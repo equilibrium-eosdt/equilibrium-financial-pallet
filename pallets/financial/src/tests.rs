@@ -16,7 +16,8 @@
 use crate::mock::*;
 use frame_support::assert_ok;
 use frame_support::dispatch::DispatchError;
-use crate::{Financial, CalcReturnType, PriceUpdate, Error};
+use crate::{Financial, CalcReturnType, CalcVolatilityType, CalcCorrelationType, PriceUpdate, Error};
+use crate::{calc_volatility, calc_correlation};
 use financial_primitives::OnPriceSet;
 use approx::assert_abs_diff_eq;
 use substrate_fixed::traits::LossyInto;
@@ -278,168 +279,10 @@ mod new_prices {
 	}
 }
 
-#[cfg(test)]
-mod calc_return {
-	use crate::*;
-	use crate::mock::FixedNumber;
-	use substrate_fixed::traits::LossyInto;
-	use approx::assert_abs_diff_eq;
-
-	#[test]
-	fn calc_return_valid() {
-		let x1 = FixedNumber::from_num(8);
-		let x2 = FixedNumber::from_num(6);
-		let actual = calc_return(x1, x2);
-		let expected = Ok(FixedNumber::from_num(-0.25));
-
-		assert_eq!(actual, expected);
-	}
-
-	#[test]
-	fn calc_return_valid_positive() {
-		let x1 = FixedNumber::from_num(8);
-		let x2 = FixedNumber::from_num(10);
-		let actual = calc_return(x1, x2);
-		let expected = Ok(FixedNumber::from_num(0.25));
-
-		assert_eq!(actual, expected);
-	}
-
-	#[test]
-	fn calc_return_x1_is_zero() {
-		let x1 = FixedNumber::from_num(0);
-		let x2 = FixedNumber::from_num(6);
-		let actual = calc_return(x1, x2);
-		let expected = Err(MathError::DivisionByZero);
-
-		assert_eq!(actual, expected);
-	}
-
-	#[test]
-	fn calc_log_return_valid() {
-		let x1 = FixedNumber::from_num(8);
-		let x2 = FixedNumber::from_num(6);
-		let actual: f64 = calc_log_return(x1, x2).unwrap().lossy_into();
-		let expected = -0.287682072452;
-
-		assert_abs_diff_eq!(actual, expected, epsilon = 1e-8);
-	}
-
-	#[test]
-	fn calc_log_return_x1_is_zero() {
-		let x1 = FixedNumber::from_num(0);
-		let x2 = FixedNumber::from_num(6);
-		let actual = calc_log_return(x1, x2);
-		let expected = Err(MathError::DivisionByZero);
-
-		assert_eq!(actual, expected);
-	}
-
-	#[test]
-	fn calc_log_return_x1_is_negative() {
-		let x1 = FixedNumber::from_num(-3);
-		let x2 = FixedNumber::from_num(6);
-		let actual = calc_log_return(x1, x2);
-		let expected = Err(MathError::Transcendental);
-
-		assert_eq!(actual, expected);
-	}
-
-	#[test]
-	fn calc_return_vec_empty() {
-		let prices: Vec<FixedNumber> = Vec::new();
-
-		let actual = calc_return_vec::<FixedNumber, FixedNumber>(CalcReturnType::Linear, prices);
-		let expected = Err(CalcReturnError::NotEnoughPoints);
-
-		assert_eq!(actual, expected);
-	}
-
-	#[test]
-	fn calc_return_vec_one_item() {
-		let prices: Vec<FixedNumber> = vec![1.5].into_iter().map(FixedNumber::from_num).collect();
-
-		let actual = calc_return_vec::<FixedNumber, FixedNumber>(CalcReturnType::Linear, prices);
-		let expected = Err(CalcReturnError::NotEnoughPoints);
-
-		assert_eq!(actual, expected);
-	}
-
-	#[test]
-	fn calc_return_vec_linear_valid() {
-		let prices: Vec<FixedNumber> = vec![
-			7_117.21,
-			7_429.72,
-			7_550.90,
-			7_569.94,
-			7_679.87,
-			7_795.60,
-			7_807.06,
-			8_801.04,
-			8_658.55,
-			8_864.77,
-		].into_iter().map(FixedNumber::from_num).collect();
-
-		let actual: Vec<f64> = calc_return_vec::<FixedNumber, FixedNumber>(CalcReturnType::Linear, prices)
-						.unwrap().into_iter().map(|x| x.lossy_into()).collect();
-		let expected: Vec<f64> = vec![
-			0.04390906,
-			0.01631017,
-			0.00252155,
-			0.01452191,
-			0.01506927,
-			0.00147006,
-			0.12731809,
-			-0.01619013,
-			0.02381692,
-		];
-
-		assert_eq!(actual.len(), expected.len());
-		for (a, e) in actual.into_iter().zip(expected.into_iter()) {
-			assert_abs_diff_eq!(a, e, epsilon = 1e-8);
-		}
-	}
-
-	#[test]
-	fn calc_return_vec_log_valid() {
-		let prices: Vec<FixedNumber> = vec![
-			7_117.21,
-			7_429.72,
-			7_550.90,
-			7_569.94,
-			7_679.87,
-			7_795.60,
-			7_807.06,
-			8_801.04,
-			8_658.55,
-			8_864.77,
-		].into_iter().map(FixedNumber::from_num).collect();
-
-		let actual: Vec<f64> = calc_return_vec::<FixedNumber, FixedNumber>(CalcReturnType::Log, prices)
-						.unwrap().into_iter().map(|x| x.lossy_into()).collect();
-		let expected: Vec<f64> = vec![
-			0.042972378,
-			0.016178588,
-			0.002518380,
-			0.014417479,
-			0.014956852,
-			0.001468981,
-			0.119841444,
-			-0.016322624,
-			0.023537722,
-		];
-
-		assert_eq!(actual.len(), expected.len());
-		for (a, e) in actual.into_iter().zip(expected.into_iter()) {
-			assert_abs_diff_eq!(a, e, epsilon = 1e-8);
-		}
-	}
-}
-
 #[test]
 fn calc_linear_return_for_btc_using_only_genesis() {
 	new_test_ext().execute_with(|| {
-		let actual: Vec<f64> = <FinancialModule as Financial>::calc_return(CalcReturnType::Linear, Asset::Btc)
+		let actual: Vec<f64> = <FinancialModule as Financial>::calc_return(CalcReturnType::Regular, Asset::Btc)
 			.unwrap().into_iter().map(|x| x.lossy_into()).collect();
 		let expected = vec![
 			0.04390906,
@@ -487,7 +330,7 @@ fn calc_log_return_for_btc_using_only_genesis() {
 #[test]
 fn calc_linear_return_for_eos_using_only_genesis() {
 	new_test_ext().execute_with(|| {
-		let actual: Vec<f64> = <FinancialModule as Financial>::calc_return(CalcReturnType::Linear, Asset::Eos)
+		let actual: Vec<f64> = <FinancialModule as Financial>::calc_return(CalcReturnType::Regular, Asset::Eos)
 			.unwrap().into_iter().map(|x| x.lossy_into()).collect();
 		let expected = vec![
 			0.01908397,
@@ -554,7 +397,7 @@ fn calc_linear_return_for_btc_using_some_oracle_prices() {
 			set_now(now);
 		}
 
-		let actual: Vec<f64> = <FinancialModule as Financial>::calc_return(CalcReturnType::Linear, Asset::Btc)
+		let actual: Vec<f64> = <FinancialModule as Financial>::calc_return(CalcReturnType::Regular, Asset::Btc)
 			.unwrap().into_iter().map(|x| x.lossy_into()).collect();
 		let expected = vec![
 			0.01506927,
@@ -923,4 +766,93 @@ fn new_price_has_arravied_while_prices_countainer_is_full() {
 		assert_eq!(actual_prices, expected_prices);
 		assert_eq!(prices_cap, expected_price_cap);
 	});
+}
+
+fn btc_prices() -> Vec<FixedNumber> {
+    vec![
+        7_117.21, 7_429.72, 7_550.90, 7_569.94, 7_679.87, 7_795.60, 7_807.06, 8_801.04, 8_658.55, 8_864.77, 8_988.60, 8_897.47, 8_912.65, 9_003.07, 9_268.76, 9_951.52, 9_842.67, 9_593.90, 8_756.43, 8_601.80, 8_804.48, 9_269.99, 9_733.72, 9_328.20, 9_377.01, 9_670.74, 9_726.57, 9_729.04, 9_522.98, 9_081.76,
+    ].into_iter().map(FixedNumber::from_num).collect()
+}
+
+#[test]
+fn calc_volatility_btc_log_regular() {
+    let return_type = CalcReturnType::Log;
+    let vol_type = CalcVolatilityType::Regular;
+    let prices = btc_prices();
+
+    let actual = calc_volatility(return_type, vol_type, &prices);
+    assert_ok!(actual);
+    let actual: f64 = actual.unwrap().lossy_into();
+
+    let expected = 0.03897272754;
+
+    assert_abs_diff_eq!(actual, expected, epsilon = 1e-8);
+}
+
+fn eos_prices() -> Vec<FixedNumber> {
+    vec![
+        2.62, 2.67, 2.72, 2.72, 2.74, 2.75, 2.78, 3.02, 2.83, 2.89, 2.95, 2.84, 2.78, 2.77, 2.69, 2.76, 2.76, 2.76, 2.45, 2.41, 2.44, 2.53, 2.61, 2.59, 2.63, 2.62, 2.66, 2.63, 2.6, 2.47,
+    ].into_iter().map(FixedNumber::from_num).collect()
+}
+
+#[test]
+fn calc_volatility_eos_log_regular() {
+    let return_type = CalcReturnType::Log;
+    let vol_type = CalcVolatilityType::Regular;
+    let prices = eos_prices();
+
+    let actual = calc_volatility(return_type, vol_type, &prices);
+    assert_ok!(actual);
+    let actual: f64 = actual.unwrap().lossy_into();
+
+    let expected = 0.03608986052;
+
+    assert_abs_diff_eq!(actual, expected, epsilon = 1e-8);
+}
+
+#[test]
+fn calc_correlation_btc_eos_log_regular() {
+    let return_type = CalcReturnType::Log;
+    let corr_type = CalcCorrelationType::Regular;
+    let btc_prices = btc_prices();
+    let eos_prices = eos_prices();
+
+    let actual = calc_correlation(return_type, corr_type, &btc_prices, &eos_prices);
+    assert_ok!(actual);
+    let actual: f64 = actual.unwrap().lossy_into();
+
+    let expected = 0.83127977977;
+
+    assert_abs_diff_eq!(actual, expected, epsilon = 1e-8);
+}
+
+#[test]
+fn calc_volatility_btc_log_exponential() {
+    let return_type = CalcReturnType::Log;
+    let vol_type = CalcVolatilityType::Exponential(36);
+    let prices = btc_prices();
+
+    let actual = calc_volatility(return_type, vol_type, &prices);
+    assert_ok!(actual);
+    let actual: f64 = actual.unwrap().lossy_into();
+
+    let expected = 0.0373329770530;
+
+    assert_abs_diff_eq!(actual, expected, epsilon = 1e-8);
+}
+
+#[test]
+fn calc_correlation_btc_eos_log_exponential() {
+    let return_type = CalcReturnType::Log;
+    let corr_type = CalcCorrelationType::Exponential(36);
+    let btc_prices = btc_prices();
+    let eos_prices = eos_prices();
+
+    let actual = calc_correlation(return_type, corr_type, &btc_prices, &eos_prices);
+    assert_ok!(actual);
+    let actual: f64 = actual.unwrap().lossy_into();
+
+    let expected = 0.726633137678748;
+
+    assert_abs_diff_eq!(actual, expected, epsilon = 1e-8);
 }
