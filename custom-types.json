@@ -23,5 +23,11 @@
         "head_index": "u32",
         "len_cap": "u32",
         "items": "Vec<FixedNumber>"
+    },
+    "FinancialMetrics": {
+        "timestamp": "Duration",
+        "log_returns": "Vec<FixedNumber>",
+        "volatility": "FixedNumber",
+        "correlations": "Vec<(Asset, FixedNumber)>"
     }
 }
