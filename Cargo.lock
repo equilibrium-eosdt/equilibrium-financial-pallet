@@ -1270,6 +1270,7 @@ dependencies = [
 name = "financial-primitives"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "frame-support",
  "parity-scale-codec",
  "sp-std",
@@ -3310,6 +3311,7 @@ name = "node-template"
 version = "0.1.0"
 dependencies = [
  "common",
+ "financial-primitives",
  "jsonrpc-core",
  "node-template-runtime",
  "pallet-transaction-payment-rpc",

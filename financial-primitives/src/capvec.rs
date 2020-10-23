@@ -1,12 +1,12 @@
 // Copyright (C) 2020 equilibrium.
 // SPDX-License-Identifier: Apache-2.0
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 // http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -14,46 +14,155 @@
 // limitations under the License.
 
 use frame_support::codec::{Decode, Encode};
+use sp_std::ops::Range;
 use sp_std::prelude::Vec;
 
-#[derive(Encode, Decode, Clone, Default)]
+enum OneOfThree<T1, T2, T3> {
+    First(T1),
+    Second(T2),
+    Third(T3),
+}
+
+fn split_range(
+    range: &Range<usize>,
+    head: usize,
+    length: usize,
+) -> OneOfThree<(), Range<usize>, (Range<usize>, Range<usize>)> {
+    assert!(
+        range.start <= length,
+        "range start index {} out of range for CapVec of length {}",
+        range.start,
+        length
+    );
+    assert!(
+        range.end <= length,
+        "range end index {} out of range for CapVec of length {}",
+        range.start,
+        length
+    );
+
+    if range.is_empty() {
+        OneOfThree::First(())
+    } else {
+        let upper_start = range.start + head;
+        let upper_end = range.end + head;
+
+        if upper_start < length && upper_end <= length {
+            // Range fits in the upper part
+            OneOfThree::Second(upper_start..upper_end)
+        } else {
+            let lower_start = upper_start % length;
+            let lower_end = upper_end % length;
+
+            if lower_start < head && lower_end <= head {
+                // Range fits in the lower part
+                OneOfThree::Second(lower_start..lower_end)
+            } else {
+                // Range located in both upper and lower parts
+                OneOfThree::Third((upper_start..length, 0..lower_end))
+            }
+        }
+    }
+}
+
+#[derive(Encode, Decode, Clone, Default, PartialEq, Eq, Debug)]
 pub struct CapVec<T> {
     head_index: u32,
     len_cap: u32,
-	items: Vec<T>,
+    items: Vec<T>,
 }
 
-impl <T> CapVec<T> {
-	pub fn new(length: u32) -> CapVec<T> {
-		CapVec {
+use sp_std::fmt::Debug;
+impl<T: Debug> CapVec<T> {
+    /// # Examples
+    /// ```
+    /// # use financial_primitives::capvec::CapVec;
+    /// let mut items = CapVec::<u64>::new(2);
+    /// ```
+    pub fn new(length: u32) -> CapVec<T> {
+        CapVec {
             head_index: 0,
             len_cap: length,
-			items: Vec::new(),
-		}
-	}
+            items: Vec::new(),
+        }
+    }
 
-	pub fn push(&mut self, item: T) {
+    /// # Examples
+    /// ```
+    /// # use financial_primitives::capvec::CapVec;
+    /// let mut items = CapVec::<u64>::new(2);
+    /// items.push(1);
+    /// ```
+    pub fn push(&mut self, item: T) {
         if self.items.len() < (self.len_cap as usize) {
             self.items.push(item);
         } else {
             self.items[self.head_index as usize] = item;
             self.head_index = (self.head_index + 1) % (self.items.len() as u32);
         }
-	}
-
-	pub fn iter(&self) -> impl Iterator<Item = &T> {
-		let head = self.head_index as usize;
-		let first_part = self.items[head..].iter();
-		let last_part = self.items[..head].iter();
-
-		first_part.chain(last_part)
     }
-    
+
+    /// # Examples
+    /// ```
+    /// # use financial_primitives::capvec::CapVec;
+    /// let mut items = CapVec::<u64>::new(2);
+    /// items.push(1);
+    /// items.push(2);
+    /// items.push(3);
+    /// let items_vec: Vec<_> = items.iter().copied().collect();
+    /// assert_eq!(items_vec, vec![2, 3]);
+    /// ```
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        let head = self.head_index as usize;
+        let first_part = self.items[head..].iter();
+        let last_part = self.items[..head].iter();
+
+        first_part.chain(last_part)
+    }
+
+    pub fn iter_range(&self, range: &Range<usize>) -> impl Iterator<Item = &T> {
+        let ranges = split_range(range, self.head_index as usize, self.items.len());
+        let (range1, range2) = match ranges {
+            OneOfThree::First(_) => ((0..0), (0..0)),
+            OneOfThree::Second(r) => (r, (0..0)),
+            OneOfThree::Third((r1, r2)) => (r1, r2),
+        };
+
+        let first_part = self.items[range1].iter();
+        let last_part = self.items[range2].iter();
+
+        first_part.chain(last_part)
+    }
+
+    /// # Examples
+    /// ```
+    /// # use financial_primitives::capvec::CapVec;
+    /// let mut items = CapVec::<u64>::new(2);
+    /// assert_eq!(items.len_cap(), 2);
+    /// ```
     pub fn len_cap(&self) -> u32 {
         self.len_cap
     }
 
-    pub fn last(&self) -> Option<& T> {
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+
+    /// # Examples
+    /// ```
+    /// # use financial_primitives::capvec::CapVec;
+    /// let mut items = CapVec::<u64>::new(2);
+    /// assert_eq!(items.last(), None);
+    /// ```
+    /// ```
+    /// # use financial_primitives::capvec::CapVec;
+    /// let mut items = CapVec::<u64>::new(2);
+    /// items.push(1);
+    /// items.push(2);
+    /// items.push(3);
+    /// assert_eq!(items.last(), Some(&3));
+    /// ```
+    pub fn last(&self) -> Option<&T> {
         let len = self.items.len();
 
         if len == 0 {
@@ -132,6 +241,75 @@ mod tests {
 
         let actual = capvec.last();
         let expected = Some(&6);
+
+        assert_eq!(actual, expected);
+    }
+
+    fn from_vec<T: Debug>(cap: u32, items: Vec<T>) -> CapVec<T> {
+        let mut capvec = CapVec::<T>::new(cap);
+        for item in items.into_iter() {
+            capvec.push(item);
+        }
+
+        capvec
+    }
+
+    #[test]
+    fn test_iter_range_full_range() {
+        let capvec = from_vec(5, vec![1, 2, 3, 4, 5]);
+
+        let actual: Vec<_> = capvec.iter_range(&(0..5)).copied().collect();
+        let expected = vec![1, 2, 3, 4, 5];
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_iter_range_empty_range() {
+        let capvec = from_vec(5, vec![1, 2, 3, 4, 5]);
+
+        let actual: Vec<_> = capvec.iter_range(&(0..0)).copied().collect();
+        let expected = vec![];
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_iter_range_first_part_range() {
+        let capvec = from_vec(6, vec![1, 2, 3, 4, 5, 6, 7, 8, 9]);
+
+        let actual: Vec<_> = capvec.iter_range(&(1..3)).copied().collect();
+        let expected = vec![5, 6];
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_iter_range_second_part_range() {
+        let capvec = from_vec(6, vec![1, 2, 3, 4, 5, 6, 7, 8, 9]);
+
+        let actual: Vec<_> = capvec.iter_range(&(4..6)).copied().collect();
+        let expected = vec![8, 9];
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_iter_range_both_parts_range() {
+        let capvec = from_vec(6, vec![1, 2, 3, 4, 5, 6, 7, 8, 9]);
+
+        let actual: Vec<_> = capvec.iter_range(&(2..5)).copied().collect();
+        let expected = vec![6, 7, 8];
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_iter_range_small_range_start_on_zero() {
+        let capvec = from_vec(5, vec![1, 2, 3, 4, 5]);
+
+        let actual: Vec<_> = capvec.iter_range(&(1..3)).copied().collect();
+        let expected = vec![2, 3];
 
         assert_eq!(actual, expected);
     }
