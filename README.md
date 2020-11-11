@@ -40,6 +40,16 @@ cargo tarpaulin -v
 
 You can see code coverage report [here](docs/tarpaulin-report.html).
 
+To run integration tests you need purge and run node first (see the next section for more information).
+
+Then type:
+
+```bash
+cargo run -p integration-testing
+```
+
+Note that integration tests take several minutes to complete.
+
 ## Running the Node
 
 First of all please ensure that your development chain's state is empty:

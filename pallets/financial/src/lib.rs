@@ -30,27 +30,30 @@
 use core::ops::{AddAssign, BitOrAssign, ShlAssign};
 use core::time::Duration;
 use financial_primitives::capvec::CapVec;
-use financial_primitives::{IntoTypeIterator, OnPriceSet, PricePeriod, PricePeriodError};
-use frame_support::codec::{Codec, Decode, Encode};
+use financial_primitives::{
+    BalanceAware, CalcReturnType, CalcVolatilityType, OnPriceSet, PricePeriod, PricePeriodError,
+};
+use frame_support::codec::{Decode, Encode, FullCodec};
 use frame_support::dispatch::{DispatchError, Parameter};
+use frame_support::storage::{IterableStorageMap, StorageMap};
 use frame_support::traits::{Get, UnixTime};
 use frame_support::{decl_error, decl_event, decl_module, decl_storage, dispatch, ensure};
 use frame_system::ensure_signed;
 use math::{
-    calc_return_func, calc_return_func_exp_vola, calc_return_iter, decay, demeaned, exp_corr,
-    exp_vola, last_recurrent_ewma, mean, mul, regular_corr, regular_vola, squared, sum, ConstType,
-    MathError, MathResult,
+    calc_return_func, calc_return_iter, covariance, decay, demeaned, exp_corr, from_num,
+    last_recurrent_ewma, log_value_at_risk, mean, mul, regular_corr, regular_value_at_risk,
+    regular_vola, squared, sum, ConstType, MathError, MathResult,
 };
 use sp_std::cmp::{max, min};
-use sp_std::convert::TryInto;
+use sp_std::convert::{TryFrom, TryInto};
 use sp_std::iter::Iterator;
 use sp_std::ops::Range;
 use sp_std::prelude::Vec;
 use sp_std::vec;
-use substrate_fixed::traits::{FixedSigned, ToFixed};
+use substrate_fixed::traits::{Fixed, FixedSigned, ToFixed};
 use substrate_fixed::transcendental::sqrt;
 
-pub use math::{CalcCorrelationType, CalcReturnType, CalcVolatilityType};
+pub use math::CalcCorrelationType;
 
 mod math;
 
@@ -72,20 +75,30 @@ pub trait Trait: frame_system::Trait {
     type PriceCount: Get<u32>;
     /// The period of the collected prices in minutes.
     type PricePeriod: Get<u32>;
+    /// Default type of calculation for return: Regular or Log.
+    type ReturnType: Get<u32>;
+    /// Default type of calculation for volatility and correlation: Regular or Exponential.
+    type VolCorType: Get<i64>;
     /// System wide type for representing various assets such as BTC, ETH, EOS, etc.
-    type Asset: Parameter + Copy + IntoTypeIterator;
+    type Asset: Parameter + Copy + Ord + Eq;
     /// Primitive integer type that [`FixedNumber`](#associatedtype.FixedNumber) based on.
     type FixedNumberBits: Copy + ToFixed + AddAssign + BitOrAssign + ShlAssign;
     /// Fixed point data type with a required precision that used for all financial calculations.
     type FixedNumber: Clone
         + Copy
-        + Codec
+        + FullCodec
         + FixedSigned<Bits = Self::FixedNumberBits>
         + PartialOrd<ConstType>
         + From<ConstType>;
     /// System wide type for representing price values. It must be convertable to and
     /// from [`FixedNumber`](#associatedtype.FixedNumber).
     type Price: Parameter + Clone + From<Self::FixedNumber> + Into<Self::FixedNumber>;
+    /// Type that gets user balances for a given AccountId
+    type Balances: BalanceAware<
+        AccountId = Self::AccountId,
+        Asset = Self::Asset,
+        Balance = Self::Price,
+    >;
 }
 
 /// Information about latest price update.
@@ -121,27 +134,72 @@ pub struct PriceLog<F> {
 
 /// Financial metrics for asset
 #[derive(Encode, Decode, Clone, Default, PartialEq, Eq, Debug)]
-pub struct FinancialMetrics<A, P> {
-    /// Start of the period inclusive for which metcis were calculated.
+pub struct AssetMetrics<A, P> {
+    /// Start of the period inclusive for which metrics were calculated.
     pub period_start: Duration,
-    /// End of the period exclusive for which metcis were calculated.
+    /// End of the period exclusive for which metrics were calculated.
     pub period_end: Duration,
     /// Log returns
-    pub log_returns: Vec<P>,
+    pub returns: Vec<P>,
     /// Volatility
     pub volatility: P,
     /// Correlations for all assets
     pub correlations: Vec<(A, P)>,
 }
 
+/// Financial metrics for all assets
+#[derive(Encode, Decode, Clone, Default, PartialEq, Eq, Debug)]
+pub struct FinancialMetrics<A, P> {
+    /// Start of the period inclusive for which metrics were calculated.
+    pub period_start: Duration,
+    /// End of the period exclusive for which metrics were calculated.
+    pub period_end: Duration,
+
+    /// Assets for which metrics were calculated.
+    pub assets: Vec<A>,
+
+    /// Mean returns for all assets. Mean returns are in the same order as the assets in the `assets` field.
+    pub mean_returns: Vec<P>,
+
+    /// Volatilities for all assets. Volatilities are in the same order as the assets in the `assets` field.
+    pub volatilities: Vec<P>,
+
+    /// Correlation matrix for all assets.
+    /// Rows and columns are in the same order as the assets in the `assets` field.
+    /// Matrix is stored by rows. For example, let matrix A =
+    ///
+    /// ```pseudocode
+    /// a11 a12 a13
+    /// a21 a22 a21
+    /// a31 a32 a33
+    /// ```
+    ///
+    /// Then vector for this matrix will be:
+    ///
+    /// ```pseudocode
+    /// vec![a11, a12, a13, a21, a22, a23, a31, a32, a33]
+    /// ```
+    pub correlations: Vec<P>,
+
+    /// Covariance matrix for all assets.
+    /// Rows and columns are in the same order as the assets in the `assets` field.
+    /// Matrix is stored by rows. See example for `correlations` field.
+    pub covariances: Vec<P>,
+}
+
 decl_storage! {
     trait Store for Module<T: Trait> as FinancialModule {
         /// Latest price updates on per asset basis.
-        Updates get(fn updates): map hasher(blake2_128_concat) T::Asset => Option<PriceUpdate<T::FixedNumber>>;
+        pub Updates get(fn updates): map hasher(blake2_128_concat) T::Asset => Option<PriceUpdate<T::FixedNumber>>;
+
         /// Price log on per asset basis.
-        PriceLogs get(fn price_logs): map hasher(blake2_128_concat) T::Asset => PriceLog<T::FixedNumber>;
+        pub PriceLogs get(fn price_logs): map hasher(blake2_128_concat) T::Asset => Option<PriceLog<T::FixedNumber>>;
+
         /// Financial metrics on per asset basis.
-        Metrics get(fn metrics): map hasher(blake2_128_concat) T::Asset => Option<FinancialMetrics<T::Asset, T::Price>>;
+        pub PerAssetMetrics get(fn per_asset_metrics): map hasher(blake2_128_concat) T::Asset => Option<AssetMetrics<T::Asset, T::Price>>;
+
+        /// Financial metrics for all known assets.
+        pub Metrics get(fn metrics): Option<FinancialMetrics<T::Asset, T::Price>>;
     }
 
     add_extra_genesis {
@@ -164,6 +222,8 @@ decl_storage! {
             for (asset, values, latest_timestamp) in config.prices.iter() {
                 let mut prices = CapVec::<T::FixedNumber>::new(price_count);
 
+                assert!(values.len() > 0, "Initial price vector can not be empty. Asset: {:?}.");
+
                 for v in values.iter() {
                     prices.push(v.clone().into());
                 }
@@ -182,8 +242,10 @@ decl_event!(
     where
         Asset = <T as Trait>::Asset,
     {
-        /// Financial parameters for the specified asset have been recalculeted
+        /// Financial metrics for the specified asset have been recalculeted
         Recalculated(Asset),
+        /// Financial metrics for all assets have been recalculeted
+        MetricsRecalculated(),
     }
 );
 
@@ -210,6 +272,9 @@ decl_error! {
         Transcendental,
         /// An invalid argument passed to the function.
         InvalidArgument,
+        /// Default return type or default correlation type is initialized with a value that can
+        /// not be converted to type `CalcReturnType` or `CalcVolatilityType` respectively.
+        InvalidConstant,
     }
 }
 
@@ -225,47 +290,91 @@ decl_module! {
 
         /// Recalculates financial metrics for a given asset
         #[weight = 10_000 + T::DbWeight::get().writes(1)]
-        pub fn recalc(origin, asset: T::Asset) -> dispatch::DispatchResult {
+        pub fn recalc_asset(origin, asset: T::Asset) -> dispatch::DispatchResult {
             ensure_signed(origin)?;
 
-            let return_type = CalcReturnType::Log;
-            let log_returns = <Module<T> as Financial>::calc_return(return_type, asset)?;
-            let volatility = <Module<T> as Financial>::calc_vol(return_type, CalcVolatilityType::Regular, asset)?;
+            let return_type = CalcReturnType::try_from(T::ReturnType::get()).map_err(|_| Error::<T>::InvalidConstant)?;
+            let vol_cor_type = CalcVolatilityType::try_from(T::VolCorType::get()).map_err(|_| Error::<T>::InvalidConstant)?;
 
             let mut correlations = vec![];
 
-            let mut period: Option<Range<Duration>> = None;
+            let mut asset_logs: Vec<_> = PriceLogs::<T>::iter().collect();
+            ensure!(asset_logs.len() > 0, Error::<T>::NotEnoughPoints);
+            asset_logs.sort_by(|(a1, _), (a2, _)| a1.cmp(a2));
 
-            for asset2 in T::Asset::into_type_iter() {
-                let (correlation, curr_period) = <Module<T> as Financial>::calc_corr(return_type, CalcCorrelationType::Regular, asset, asset2)?;
+            let price_period = PricePeriod(T::PricePeriod::get());
+            let ranges = asset_logs.iter().map(|(_, l)| get_period_id_range(&price_period, l.prices.len(), l.latest_timestamp)).collect::<MathResult<Vec<_>>>().map_err(Into::<Error<T>>::into)?;
 
-                if let Some(ref prev_period) = period {
-                    // Ensure that all correlations calculated for the same period
-                    if prev_period != &curr_period {
-                        return Err(Error::<T>::NotEnoughPoints.into());
-                    }
+            // Ensure that all correlations calculated for the same period
+            let intersection = get_range_intersection(ranges.iter()).map_err(Into::<Error<T>>::into)?;
+
+            let (log1, period_id_range1) = asset_logs.iter().zip(ranges.iter()).find_map(|((a, l), r)| if *a == asset {Some((l, r))} else {None}).ok_or(Error::<T>::NotEnoughPoints)?;
+            let range1 = get_index_range(period_id_range1, &intersection).map_err(Into::<Error<T>>::into)?;
+            let prices1 = log1.prices.iter_range(&range1).copied().collect::<Vec<_>>();
+
+            let ret1 = Ret::<T::FixedNumber>::new(&prices1, return_type).map_err(Into::<Error<T>>::into)?;
+            let vol1 = Vol::<T::FixedNumber>::new(&ret1, vol_cor_type).map_err(Into::<Error<T>>::into)?;
+
+            for ((asset2, log2), period_id_range2) in asset_logs.iter().zip(ranges.iter()) {
+                if *asset2 == asset {
+                    // Correlation for any asset with itself sould be 1
+                    correlations.push((*asset2, from_num::<T::FixedNumber>(1).into()));
                 } else {
-                    period = Some(curr_period);
+                    let range2 = get_index_range(period_id_range2, &intersection).map_err(Into::<Error<T>>::into)?;
+                    let prices2 = log2.prices.iter_range(&range2).copied().collect::<Vec<_>>();
+
+                    let ret2 = Ret::<T::FixedNumber>::new(&prices2, return_type).map_err(Into::<Error<T>>::into)?;
+                    let vol2 = Vol::<T::FixedNumber>::new(&ret2, vol_cor_type).map_err(Into::<Error<T>>::into)?;
+
+                    let corre = cor(&ret1, &vol1, &ret2, &vol2).map_err(Into::<Error<T>>::into)?;
+
+                    correlations.push((*asset2, corre.into()));
                 }
-
-                correlations.push((asset2, correlation));
             }
 
-            if let Some(period) = period {
-                Metrics::<T>::mutate(&asset, |metrics| {
-                    *metrics = Some(FinancialMetrics {
-                        period_start: period.start,
-                        period_end: period.end,
-                        log_returns,
-                        volatility,
-                        correlations,
-                    });
-                });
+            let temporal_range = Range {
+                start: price_period.get_period_id_start(intersection.start).map_err(Into::<MathError>::into).map_err(Into::<Error<T>>::into)?,
+                end: price_period.get_period_id_start(intersection.end).map_err(Into::<MathError>::into).map_err(Into::<Error<T>>::into)?,
+            };
 
-                Ok(())
-            } else {
-                Err(Error::<T>::NotEnoughPoints.into())
-            }
+            let returns: Vec<T::Price> = ret1.ret.into_iter().map(|x| x.into()).collect();
+            let volatility: T::Price = vol1.vol.into();
+
+            PerAssetMetrics::<T>::insert(&asset, AssetMetrics {
+                    period_start: temporal_range.start,
+                    period_end: temporal_range.end,
+                    returns,
+                    volatility,
+                    correlations,
+                }
+            );
+
+            Self::deposit_event(RawEvent::Recalculated(asset));
+
+            Ok(())
+        }
+
+        /// Recalculates financial metrics for all known assets.
+        #[weight = 10_000 + T::DbWeight::get().writes(1)]
+        pub fn recalc(origin) -> dispatch::DispatchResult {
+            ensure_signed(origin)?;
+
+            let return_type = CalcReturnType::try_from(T::ReturnType::get()).map_err(|_| Error::<T>::InvalidConstant)?;
+            let vol_cor_type = CalcVolatilityType::try_from(T::VolCorType::get()).map_err(|_| Error::<T>::InvalidConstant)?;
+
+            let price_period = PricePeriod(T::PricePeriod::get());
+
+            let mut asset_logs: Vec<_> = PriceLogs::<T>::iter().collect();
+            ensure!(asset_logs.len() > 0, Error::<T>::NotEnoughPoints);
+            asset_logs.sort_by(|(a1, _), (a2, _)| a1.cmp(a2));
+
+            let metrics = financial_metrics::<T::Asset, T::FixedNumber, T::Price>(return_type, vol_cor_type, &price_period, &asset_logs).map_err(Into::<Error<T>>::into)?;
+
+            Metrics::<T>::put(metrics);
+
+            Self::deposit_event(RawEvent::MetricsRecalculated());
+
+            Ok(())
         }
     }
 }
@@ -276,31 +385,26 @@ enum GetNewPricesError {
 }
 
 fn get_new_prices<P: Clone>(
-    last_price: Option<P>,
+    last_price: P,
     new_price: P,
     empty_periods: u32,
     max_periods: u32,
 ) -> Result<Vec<P>, GetNewPricesError> {
-    match last_price {
-        None => Ok(vec![new_price]),
-        Some(last_price) => {
-            // Calculate how many values to pre-populate the array with
-            // We will pre-fill up to `max_periods` elements (leaving out one for the new price)
-            let prices_size = min(
-                empty_periods,
-                max_periods
-                    .checked_sub(1)
-                    .ok_or(GetNewPricesError::Overflow)?,
-            ) as usize;
+    // Calculate how many values to pre-populate the array with
+    // We will pre-fill up to `max_periods` elements (leaving out one for the new price)
+    let prices_size = min(
+        empty_periods,
+        max_periods
+            .checked_sub(1)
+            .ok_or(GetNewPricesError::Overflow)?,
+    ) as usize;
 
-            // Init the vector filled with last_price
-            let mut new_prices = vec![last_price.clone(); prices_size];
+    // Init the vector filled with last_price
+    let mut new_prices = vec![last_price.clone(); prices_size];
 
-            new_prices.push(new_price);
+    new_prices.push(new_price);
 
-            Ok(new_prices)
-        }
-    }
+    Ok(new_prices)
 }
 
 impl<T: Trait> From<GetNewPricesError> for Error<T> {
@@ -436,15 +540,13 @@ impl<T: Trait> OnPriceSet for Module<T> {
         let update = Self::updates(asset);
         let log = Self::price_logs(asset);
 
-        // Maximum price log size can be either 0 or `PriceCount`.
-        // If size is 0 it means then no information exists for a given `asset` yet.
-        // If size is `PriceCount` then we already have some price points received by previous
-        // `on_price_set` call or from genesis block.
-        ensure!(
-            log.prices.len_cap() == 0 || log.prices.len_cap() == price_count,
-            Error::<T>::InvalidStorage
-        );
-        let init_prices = log.prices.len_cap() == 0;
+        // If `PriceLog` for a given asset is not empty then it must contain fully initialized `CapVec`. It's `cap_len` should be equal to `PriceCount`.
+        if let Some(ref log) = log {
+            ensure!(
+                log.prices.len_cap() == price_count,
+                Error::<T>::InvalidStorage
+            );
+        }
 
         let period_start = update.map(|x| x.period_start);
         let price_period = PricePeriod(T::PricePeriod::get());
@@ -457,41 +559,55 @@ impl<T: Trait> OnPriceSet for Module<T> {
         // Meanwhile only first point received in the current period is stored in the price log.
         match period_change.action {
             PricePeriodAction::RemainsUnchanged => {
-                Updates::<T>::mutate(&asset, |update| {
-                    *update = Some(PriceUpdate {
+                Updates::<T>::insert(
+                    &asset,
+                    PriceUpdate {
                         period_start: period_start,
                         time: now,
                         price: value,
-                    });
-                });
+                    },
+                );
             }
             PricePeriodAction::StartedNew(empty_periods) => {
-                let new_prices = get_new_prices(
-                    log.prices.last().cloned(),
-                    value,
-                    empty_periods,
-                    price_count,
-                )
-                .map_err(Into::<Error<T>>::into)?;
+                let log_to_insert = if let Some(mut existing_log) = log {
+                    existing_log.latest_timestamp = now;
 
-                Updates::<T>::mutate(&asset, |update| {
-                    *update = Some(PriceUpdate {
+                    // If `PriceLog` for a given asset is not empty, then it should contain at
+                    // least one price value. It was set during prevoius `on_price_update` call or
+                    // during genesis state generation routine.
+                    let last_price = existing_log
+                        .prices
+                        .last()
+                        .copied()
+                        .ok_or(Error::<T>::InvalidStorage)?;
+
+                    let new_prices = get_new_prices(last_price, value, empty_periods, price_count)
+                        .map_err(Into::<Error<T>>::into)?;
+
+                    for p in new_prices {
+                        existing_log.prices.push(p);
+                    }
+
+                    existing_log
+                } else {
+                    let mut new_prices = CapVec::<T::FixedNumber>::new(price_count);
+                    new_prices.push(value);
+
+                    PriceLog {
+                        latest_timestamp: now,
+                        prices: new_prices,
+                    }
+                };
+
+                Updates::<T>::insert(
+                    &asset,
+                    PriceUpdate {
                         period_start: period_start,
                         time: now,
                         price: value,
-                    })
-                });
-                PriceLogs::<T>::mutate(&asset, |log| {
-                    log.latest_timestamp = now;
-
-                    if init_prices {
-                        log.prices = CapVec::<T::FixedNumber>::new(price_count);
-                    }
-
-                    for p in new_prices {
-                        log.prices.push(p);
-                    }
-                });
+                    },
+                );
+                PriceLogs::<T>::insert(&asset, log_to_insert);
             }
         }
 
@@ -522,57 +638,283 @@ pub trait Financial {
     /// Calculates pairwise correlation between two specified assets.
     fn calc_corr(
         return_type: CalcReturnType,
-        correlation_type: CalcCorrelationType,
+        correlation_type: CalcVolatilityType,
         asset1: Self::Asset,
         asset2: Self::Asset,
     ) -> Result<(Self::Price, Range<Duration>), DispatchError>;
     /// Calculates portfolio volatility.
-    fn calc_portf_vol(account_id: Self::AccountId) -> Result<Self::Price, DispatchError>;
+    fn calc_portf_vol(
+        return_type: CalcReturnType,
+        vol_cor_type: CalcVolatilityType,
+        account_id: Self::AccountId,
+    ) -> Result<Self::Price, DispatchError>;
     /// Calculates portfolio value at risk.
     fn calc_portf_var(
-        account_id: Self::AccountId,
         return_type: CalcReturnType,
+        vol_cor_type: CalcVolatilityType,
+        account_id: Self::AccountId,
         z_score: u32,
     ) -> Result<Self::Price, DispatchError>;
 }
 
-fn calc_volatility<F>(
+#[derive(Debug)]
+struct Ret<'prices, F> {
+    prices: &'prices [F],
     return_type: CalcReturnType,
+    ret: Vec<F>,
+}
+
+impl<'prices, F> Ret<'prices, F>
+where
+    F: FixedSigned + PartialOrd<ConstType> + From<ConstType>,
+    F::Bits: Copy + ToFixed + AddAssign + BitOrAssign + ShlAssign,
+{
+    fn new(prices: &'prices [F], return_type: CalcReturnType) -> MathResult<Ret<'prices, F>> {
+        let ret = calc_return_iter(prices, calc_return_func(return_type))
+            .collect::<MathResult<Vec<_>>>()?;
+        Ok(Ret {
+            prices,
+            return_type,
+            ret,
+        })
+    }
+}
+
+#[derive(Debug)]
+struct Vol<F> {
     volatility_type: CalcVolatilityType,
-    prices: &[F],
+    mean_return: F,
+    demeaned_return: Vec<F>,
+    decay: Option<F>,
+    vol: F,
+}
+
+impl<F> Vol<F>
+where
+    F: FixedSigned + PartialOrd<ConstType> + From<ConstType>,
+    F::Bits: Copy + ToFixed + AddAssign + BitOrAssign + ShlAssign,
+{
+    fn new<'prices>(
+        ret: &Ret<'prices, F>,
+        volatility_type: CalcVolatilityType,
+    ) -> MathResult<Vol<F>> {
+        let mean_return: F = mean(&ret.ret)?;
+
+        let demeaned_return =
+            demeaned(ret.ret.iter(), mean_return).collect::<MathResult<Vec<_>>>()?;
+        let squared_demeaned_return = squared(demeaned_return.iter().copied().map(Ok));
+
+        match volatility_type {
+            CalcVolatilityType::Regular => {
+                let vol: F = sqrt(regular_vola(ret.ret.len(), sum(squared_demeaned_return)?)?)
+                    .map_err(|_| MathError::Transcendental)?;
+
+                Ok(Vol {
+                    volatility_type,
+                    mean_return,
+                    demeaned_return,
+                    decay: None,
+                    vol,
+                })
+            }
+            CalcVolatilityType::Exponential(ewma_length) => {
+                let decay = decay(ewma_length)?;
+                let var = last_recurrent_ewma(squared_demeaned_return, decay)?;
+                let vol = sqrt(var).map_err(|_| MathError::Transcendental)?;
+
+                Ok(Vol {
+                    volatility_type: CalcVolatilityType::Exponential(ewma_length),
+                    mean_return,
+                    demeaned_return,
+                    decay: Some(decay),
+                    vol,
+                })
+            }
+        }
+    }
+}
+
+fn cor<'prices, F>(
+    ret1: &Ret<'prices, F>,
+    volatility1: &Vol<F>,
+    ret2: &Ret<'prices, F>,
+    volatility2: &Vol<F>,
 ) -> MathResult<F>
 where
     F: FixedSigned + PartialOrd<ConstType> + From<ConstType>,
     F::Bits: Copy + ToFixed + AddAssign + BitOrAssign + ShlAssign,
 {
-    match volatility_type {
-        CalcVolatilityType::Regular => {
-            let return_func = calc_return_func(return_type);
-            let returns: MathResult<Vec<F>> = calc_return_iter(&prices, return_func).collect();
-            let returns = returns?;
+    let zero = from_num::<F>(0);
 
-            let mean_return: F = mean(&returns)?;
+    match (&volatility1, &volatility2) {
+        (Vol { vol: vol1, .. }, _) if *vol1 == zero => Ok(zero),
+        (_, Vol { vol: vol2, .. }) if *vol2 == zero => Ok(zero),
+        (
+            Vol {
+                volatility_type: CalcVolatilityType::Regular,
+                demeaned_return: dr1,
+                vol: vol1,
+                ..
+            },
+            Vol {
+                volatility_type: CalcVolatilityType::Regular,
+                demeaned_return: dr2,
+                vol: vol2,
+                ..
+            },
+        ) => {
+            let demeaned_returns_product = mul(dr1.iter().copied(), dr2.iter().copied());
 
-            let demeaned_return = demeaned(returns.iter(), mean_return);
-            let squared_demeaned_return = squared(demeaned_return);
-
-            let volatility: F = sqrt(regular_vola(returns.len(), sum(squared_demeaned_return)?)?)
-                .map_err(|_| MathError::Transcendental)?;
-
-            Ok(volatility)
+            let products_sum = sum(demeaned_returns_product)?;
+            let products_len = min(ret1.ret.len(), ret2.ret.len());
+            let result = regular_corr(products_len, products_sum, *vol1, *vol2)?;
+            Ok(result)
         }
-        CalcVolatilityType::Exponential(ewma_length) => {
-            let return_func = calc_return_func_exp_vola(return_type);
-            let returns = calc_return_iter(&prices, return_func);
-            let squared_returns = squared(returns);
-            let decay = decay(ewma_length)?;
-            let var = last_recurrent_ewma(squared_returns, decay)?;
-            let last_price = prices.last().copied().ok_or(MathError::NotEnoughPoints)?;
-            let vola = exp_vola(return_type, var, last_price)?;
+        (
+            Vol {
+                volatility_type: CalcVolatilityType::Exponential(n1),
+                demeaned_return: dr1,
+                decay: Some(d1),
+                vol: vol1,
+                ..
+            },
+            Vol {
+                volatility_type: CalcVolatilityType::Exponential(n2),
+                demeaned_return: dr2,
+                vol: vol2,
+                ..
+            },
+        ) if n1 == n2 => {
+            let demeaned_returns_product = mul(dr1.iter().copied(), dr2.iter().copied());
 
-            Ok(vola)
+            let decay = *d1;
+            let last_covar = last_recurrent_ewma(demeaned_returns_product, decay)?;
+            let result = exp_corr(last_covar, *vol1, *vol2)?;
+            Ok(result)
+        }
+        _ => Err(MathError::InvalidArgument),
+    }
+}
+
+fn financial_metrics<A, F, P>(
+    return_type: CalcReturnType,
+    vol_cor_type: CalcVolatilityType,
+    price_period: &PricePeriod,
+    asset_logs: &[(A, PriceLog<F>)],
+) -> MathResult<FinancialMetrics<A, P>>
+where
+    F: FixedSigned + PartialOrd<ConstType> + From<ConstType>,
+    F::Bits: Copy + ToFixed + AddAssign + BitOrAssign + ShlAssign,
+    F: Into<P>,
+    A: Eq + Copy,
+{
+    ensure!(asset_logs.len() > 0, MathError::NotEnoughPoints);
+
+    let mut mean_returns = Vec::with_capacity(asset_logs.len());
+    let mut volatilities = Vec::with_capacity(asset_logs.len());
+    let mut correlations = Vec::with_capacity(asset_logs.len() * asset_logs.len());
+
+    let period_id_ranges = asset_logs
+        .iter()
+        .map(|(_, l)| get_period_id_range(&price_period, l.prices.len(), l.latest_timestamp))
+        .collect::<MathResult<Vec<_>>>()?;
+
+    // Ensure that all correlations calculated for the same period
+    let intersection = get_range_intersection(period_id_ranges.iter())?;
+
+    for ((asset1, log1), period_id_range1) in asset_logs.iter().zip(period_id_ranges.iter()) {
+        let range1 = get_index_range(period_id_range1, &intersection)?;
+        let prices1 = log1.prices.iter_range(&range1).copied().collect::<Vec<_>>();
+
+        let ret1 = Ret::<F>::new(&prices1, return_type)?;
+        let vol1 = Vol::<F>::new(&ret1, vol_cor_type)?;
+
+        mean_returns.push(vol1.mean_return);
+        volatilities.push(vol1.vol);
+
+        for ((asset2, log2), period_id_range2) in asset_logs.iter().zip(period_id_ranges.iter()) {
+            if *asset2 == *asset1 {
+                // Correlation for any asset with itself sould be 1
+                correlations.push(from_num::<F>(1));
+            } else {
+                let range2 = get_index_range(period_id_range2, &intersection)?;
+                let prices2 = log2.prices.iter_range(&range2).copied().collect::<Vec<_>>();
+
+                let ret2 = Ret::<F>::new(&prices2, return_type)?;
+                let vol2 = Vol::<F>::new(&ret2, vol_cor_type)?;
+
+                let corre = cor(&ret1, &vol1, &ret2, &vol2)?;
+
+                correlations.push(corre);
+            }
         }
     }
+
+    let covariances = covariance(&correlations, &volatilities)
+        .map(|x| x.map(|y| y.into()))
+        .collect::<MathResult<Vec<P>>>()?;
+
+    let temporal_range = Range {
+        start: price_period.get_period_id_start(intersection.start)?,
+        end: price_period.get_period_id_start(intersection.end)?,
+    };
+
+    Ok(FinancialMetrics {
+        period_start: temporal_range.start,
+        period_end: temporal_range.end,
+        assets: asset_logs.iter().map(|(a, _)| a).copied().collect(),
+        mean_returns: mean_returns.into_iter().map(|x| x.into()).collect(),
+        volatilities: volatilities.into_iter().map(|x| x.into()).collect(),
+        correlations: correlations.into_iter().map(|x| x.into()).collect(),
+        covariances: covariances,
+    })
+}
+
+fn latest_prices<'logs, A, F>(
+    asset_logs: &'logs [(A, PriceLog<F>)],
+) -> impl Iterator<Item = MathResult<F>> + 'logs
+where
+    F: Copy,
+{
+    asset_logs.iter().map(|(_, l)| {
+        l.prices
+            .last()
+            .map(|&x| x)
+            .ok_or(MathError::NotEnoughPoints)
+    })
+}
+
+fn weights<F>(quantity: &[F], prices: &[F]) -> MathResult<Vec<F>>
+where
+    F: Fixed,
+{
+    let products =
+        mul(quantity.iter().copied(), prices.iter().copied()).collect::<MathResult<Vec<_>>>()?;
+    let sum_product = sum(products.iter().copied().map(Ok))?;
+
+    products
+        .iter()
+        .copied()
+        .map(|x| x.checked_div(sum_product).ok_or(MathError::DivisionByZero))
+        .collect()
+}
+
+fn portfolio_vol<F>(weights: &[F], cov: &[F]) -> MathResult<F>
+where
+    F: FixedSigned + PartialOrd<ConstType> + From<ConstType>,
+    F::Bits: Copy + ToFixed + AddAssign + BitOrAssign + ShlAssign,
+{
+    let n = weights.len();
+    ensure!(cov.len() == n * n, MathError::InvalidArgument);
+
+    let matrix_1xn = cov
+        .chunks(n)
+        .map(|cov_row| sum(mul(weights.iter().copied(), cov_row.iter().copied())))
+        .collect::<MathResult<Vec<_>>>()?;
+
+    let matrix_1x1 = sum(mul(matrix_1xn.into_iter(), weights.iter().copied()))?;
+
+    sqrt(matrix_1x1).map_err(|_| MathError::Transcendental)
 }
 
 impl From<PricePeriodError> for MathError {
@@ -580,67 +922,6 @@ impl From<PricePeriodError> for MathError {
         match error {
             PricePeriodError::DivisionByZero => MathError::DivisionByZero,
             PricePeriodError::Overflow => MathError::Overflow,
-        }
-    }
-}
-
-fn calc_correlation<F>(
-    return_type: CalcReturnType,
-    correlation_type: CalcCorrelationType,
-    prices1: &[F],
-    prices2: &[F],
-) -> MathResult<F>
-where
-    F: FixedSigned + PartialOrd<ConstType> + From<ConstType>,
-    F::Bits: Copy + ToFixed + AddAssign + BitOrAssign + ShlAssign,
-{
-    let return_func = calc_return_func(return_type);
-
-    let returns1: MathResult<Vec<F>> = calc_return_iter(&prices1, return_func).collect();
-    let returns1 = returns1?;
-
-    let returns2: MathResult<Vec<F>> = calc_return_iter(&prices2, return_func).collect();
-    let returns2 = returns2?;
-
-    let mean_return1: F = mean(&returns1)?;
-    let mean_return2: F = mean(&returns2)?;
-
-    let demeaned_returns1: MathResult<Vec<F>> = demeaned(returns1.iter(), mean_return1).collect();
-    let demeaned_returns1 = demeaned_returns1?;
-    let demeaned_returns2: MathResult<Vec<F>> = demeaned(returns2.iter(), mean_return2).collect();
-    let demeaned_returns2 = demeaned_returns2?;
-
-    let demeaned_returns_product = mul(
-        demeaned_returns1.iter().copied(),
-        demeaned_returns2.iter().copied(),
-    );
-
-    let squared_demeaned_returns1 = squared(demeaned_returns1.iter().map(|&x| Ok(x)));
-    let squared_demeaned_returns2 = squared(demeaned_returns2.iter().map(|&x| Ok(x)));
-
-    let volatility1: F = sqrt(regular_vola(
-        returns1.len(),
-        sum(squared_demeaned_returns1)?,
-    )?)
-    .map_err(|_| MathError::Transcendental)?;
-    let volatility2: F = sqrt(regular_vola(
-        returns2.len(),
-        sum(squared_demeaned_returns2)?,
-    )?)
-    .map_err(|_| MathError::Transcendental)?;
-
-    match correlation_type {
-        CalcCorrelationType::Regular => {
-            let products_sum = sum(demeaned_returns_product)?;
-            let products_len = min(returns1.len(), returns2.len());
-            let result = regular_corr(products_len, products_sum, volatility1, volatility2)?;
-            Ok(result)
-        }
-        CalcCorrelationType::Exponential(ewma_length) => {
-            let decay = decay(ewma_length)?;
-            let last_covar = last_recurrent_ewma(demeaned_returns_product, decay)?;
-            let result = exp_corr(last_covar, volatility1, volatility2)?;
-            Ok(result)
         }
     }
 }
@@ -677,7 +958,7 @@ fn get_period_id_range(
     })
 }
 
-fn get_range_intersection<T>(range1: &Range<T>, range2: &Range<T>) -> Range<T>
+fn get_range_intersection2<T>(range1: &Range<T>, range2: &Range<T>) -> Range<T>
 where
     T: Ord + Copy,
 {
@@ -685,6 +966,29 @@ where
     let end = min(range1.end, range2.end);
 
     Range { start, end }
+}
+
+fn get_range_intersection<'a, T, I>(mut ranges: I) -> MathResult<Range<T>>
+where
+    T: 'a + Ord + Copy,
+    I: Iterator<Item = &'a Range<T>>,
+{
+    let intersection = ranges.try_fold::<Option<Range<T>>, _, Option<_>>(None, |acc, r| {
+        if let Some(i) = acc {
+            let new_intersection = get_range_intersection2(&i, r);
+            if new_intersection.is_empty() {
+                None
+            } else {
+                Some(Some(new_intersection))
+            }
+        } else {
+            Some(Some(r.clone()))
+        }
+    });
+
+    intersection
+        .and_then(|i| i)
+        .ok_or(MathError::NotEnoughPoints)
 }
 
 /// Calculates price log indices for the subrange `intersection` of the price period range `range`.
@@ -717,15 +1021,15 @@ fn get_prices_for_common_periods<T: Trait>(
 ) -> MathResult<(Vec<T::FixedNumber>, Vec<T::FixedNumber>, Range<Duration>)> {
     let price_period = PricePeriod(T::PricePeriod::get());
 
-    let log1 = PriceLogs::<T>::get(asset1);
+    let log1 = PriceLogs::<T>::get(asset1).ok_or(MathError::NotEnoughPoints)?;
     let period_id_range1 =
         get_period_id_range(&price_period, log1.prices.len(), log1.latest_timestamp)?;
 
-    let log2 = PriceLogs::<T>::get(asset2);
+    let log2 = PriceLogs::<T>::get(asset2).ok_or(MathError::NotEnoughPoints)?;
     let period_id_range2 =
         get_period_id_range(&price_period, log2.prices.len(), log2.latest_timestamp)?;
 
-    let intersection = get_range_intersection(&period_id_range1, &period_id_range2);
+    let intersection = get_range_intersection2(&period_id_range1, &period_id_range2);
 
     let index_range1 = get_index_range(&period_id_range1, &intersection)?;
     let prices1: Vec<_> = log1.prices.iter_range(&index_range1).copied().collect();
@@ -749,13 +1053,12 @@ impl<T: Trait> Financial for Module<T> {
         return_type: CalcReturnType,
         asset: T::Asset,
     ) -> Result<Vec<T::Price>, DispatchError> {
-        let prices: Vec<_> = PriceLogs::<T>::get(asset).prices.iter().cloned().collect();
+        let log = PriceLogs::<T>::get(asset).ok_or(Error::<T>::NotEnoughPoints)?;
+        let prices: Vec<_> = log.prices.iter().cloned().collect();
 
-        let result: MathResult<Vec<T::Price>> =
-            calc_return_iter(&prices, calc_return_func(return_type))
-                .map(|x| x.map(|y| y.into()))
-                .collect();
-        let result = result.map_err(Into::<Error<T>>::into)?;
+        let ret =
+            Ret::<T::FixedNumber>::new(&prices, return_type).map_err(Into::<Error<T>>::into)?;
+        let result: Vec<T::Price> = ret.ret.into_iter().map(|x| x.into()).collect();
 
         if result.len() == 0 {
             Err(Error::<T>::NotEnoughPoints.into())
@@ -769,17 +1072,20 @@ impl<T: Trait> Financial for Module<T> {
         volatility_type: CalcVolatilityType,
         asset: T::Asset,
     ) -> Result<Self::Price, DispatchError> {
-        let prices: Vec<_> = PriceLogs::<T>::get(asset).prices.iter().cloned().collect();
+        let log = PriceLogs::<T>::get(asset).ok_or(Error::<T>::NotEnoughPoints)?;
+        let prices: Vec<_> = log.prices.iter().cloned().collect();
 
-        let result = calc_volatility::<T::FixedNumber>(return_type, volatility_type, &prices)
+        let returns =
+            Ret::<T::FixedNumber>::new(&prices, return_type).map_err(Into::<Error<T>>::into)?;
+        let result = Vol::<T::FixedNumber>::new(&returns, volatility_type)
             .map_err(Into::<Error<T>>::into)?;
 
-        Ok(result.into())
+        Ok(result.vol.into())
     }
 
     fn calc_corr(
         return_type: CalcReturnType,
-        correlation_type: CalcCorrelationType,
+        correlation_type: CalcVolatilityType,
         asset1: T::Asset,
         asset2: T::Asset,
     ) -> Result<(Self::Price, Range<Duration>), DispatchError> {
@@ -787,22 +1093,102 @@ impl<T: Trait> Financial for Module<T> {
         let (prices1, prices2, temporal_range) =
             get_prices_for_common_periods::<T>(asset1, asset2).map_err(Into::<Error<T>>::into)?;
 
-        let result =
-            calc_correlation::<T::FixedNumber>(return_type, correlation_type, &prices1, &prices2)
-                .map_err(Into::<Error<T>>::into)?;
+        let ret1 =
+            Ret::<T::FixedNumber>::new(&prices1, return_type).map_err(Into::<Error<T>>::into)?;
+        let vol1 =
+            Vol::<T::FixedNumber>::new(&ret1, correlation_type).map_err(Into::<Error<T>>::into)?;
 
-        Ok((result.into(), temporal_range))
+        let ret2 =
+            Ret::<T::FixedNumber>::new(&prices2, return_type).map_err(Into::<Error<T>>::into)?;
+        let vol2 =
+            Vol::<T::FixedNumber>::new(&ret2, correlation_type).map_err(Into::<Error<T>>::into)?;
+
+        let corre = cor(&ret1, &vol1, &ret2, &vol2).map_err(Into::<Error<T>>::into)?;
+
+        Ok((corre.into(), temporal_range))
     }
 
-    fn calc_portf_vol(_account_id: Self::AccountId) -> Result<Self::Price, DispatchError> {
-        Err(Error::<T>::NotImplemented.into())
+    fn calc_portf_vol(
+        return_type: CalcReturnType,
+        vol_cor_type: CalcVolatilityType,
+        account_id: Self::AccountId,
+    ) -> Result<Self::Price, DispatchError> {
+        let price_period = PricePeriod(T::PricePeriod::get());
+
+        let mut asset_logs: Vec<_> = PriceLogs::<T>::iter().collect();
+        ensure!(asset_logs.len() > 0, Error::<T>::NotEnoughPoints);
+        asset_logs.sort_by(|(a1, _), (a2, _)| a1.cmp(a2));
+
+        let metrics = financial_metrics::<T::Asset, T::FixedNumber, T::FixedNumber>(
+            return_type,
+            vol_cor_type,
+            &price_period,
+            &asset_logs,
+        )
+        .map_err(Into::<Error<T>>::into)?;
+
+        let prices = latest_prices::<T::Asset, T::FixedNumber>(&asset_logs)
+            .collect::<MathResult<Vec<_>>>()
+            .map_err(Into::<Error<T>>::into)?;
+
+        let balances = T::Balances::balances(&account_id, &metrics.assets)?
+            .into_iter()
+            .map(|x| x.into())
+            .collect::<Vec<_>>();
+
+        let ws = weights(&balances, &prices).map_err(Into::<Error<T>>::into)?;
+
+        let vol = portfolio_vol(&ws, &metrics.covariances).map_err(Into::<Error<T>>::into)?;
+
+        Ok(vol.into())
     }
 
     fn calc_portf_var(
-        _account_id: Self::AccountId,
-        _return_type: CalcReturnType,
-        _z_score: u32,
+        return_type: CalcReturnType,
+        vol_cor_type: CalcVolatilityType,
+        account_id: Self::AccountId,
+        z_score: u32,
     ) -> Result<Self::Price, DispatchError> {
-        Err(Error::<T>::NotImplemented.into())
+        let price_period = PricePeriod(T::PricePeriod::get());
+
+        let mut asset_logs: Vec<_> = PriceLogs::<T>::iter().collect();
+        ensure!(asset_logs.len() > 0, Error::<T>::NotEnoughPoints);
+        asset_logs.sort_by(|(a1, _), (a2, _)| a1.cmp(a2));
+
+        let metrics = financial_metrics::<T::Asset, T::FixedNumber, T::FixedNumber>(
+            return_type,
+            vol_cor_type,
+            &price_period,
+            &asset_logs,
+        )
+        .map_err(Into::<Error<T>>::into)?;
+
+        let prices = latest_prices::<T::Asset, T::FixedNumber>(&asset_logs)
+            .collect::<MathResult<Vec<_>>>()
+            .map_err(Into::<Error<T>>::into)?;
+
+        let balances = T::Balances::balances(&account_id, &metrics.assets)?
+            .into_iter()
+            .map(|x| x.into())
+            .collect::<Vec<_>>();
+
+        let ws = weights(&balances, &prices).map_err(Into::<Error<T>>::into)?;
+
+        let vol = portfolio_vol(&ws, &metrics.covariances).map_err(Into::<Error<T>>::into)?;
+        let total_weighted_mean_return = sum(mul(ws.into_iter(), metrics.mean_returns.into_iter()))
+            .map_err(Into::<Error<T>>::into)?;
+
+        match return_type {
+            CalcReturnType::Regular => {
+                let portf_var = regular_value_at_risk(z_score, vol, total_weighted_mean_return)
+                    .map_err(Into::<Error<T>>::into)?;
+                Ok(portf_var.into())
+            }
+            CalcReturnType::Log => {
+                let portf_var = log_value_at_risk(z_score, vol, total_weighted_mean_return)
+                    .map_err(Into::<Error<T>>::into)?;
+                Ok(portf_var.into())
+            }
+        }
     }
 }

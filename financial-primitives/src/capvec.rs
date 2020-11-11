@@ -73,7 +73,7 @@ pub struct CapVec<T> {
 }
 
 use sp_std::fmt::Debug;
-impl<T: Debug> CapVec<T> {
+impl<T> CapVec<T> {
     /// # Examples
     /// ```
     /// # use financial_primitives::capvec::CapVec;
@@ -120,6 +120,17 @@ impl<T: Debug> CapVec<T> {
         first_part.chain(last_part)
     }
 
+    /// # Examples
+    /// ```
+    /// # use financial_primitives::capvec::CapVec;
+    /// let mut items = CapVec::<u64>::new(4);
+    /// items.push(1);
+    /// items.push(2);
+    /// items.push(3);
+    /// items.push(4);
+    /// let items_vec: Vec<_> = items.iter_range(&(1..3)).copied().collect();
+    /// assert_eq!(items_vec, vec![2, 3]);
+    /// ```
     pub fn iter_range(&self, range: &Range<usize>) -> impl Iterator<Item = &T> {
         let ranges = split_range(range, self.head_index as usize, self.items.len());
         let (range1, range2) = match ranges {
@@ -312,5 +323,12 @@ mod tests {
         let expected = vec![2, 3];
 
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    #[should_panic(expected = "index out of bounds: the len is 0 but the index is 0")]
+    fn test_zero_cap() {
+        let mut capvec = CapVec::<u32>::new(0);
+        capvec.push(1);
     }
 }

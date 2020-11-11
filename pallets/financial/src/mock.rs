@@ -16,8 +16,9 @@
 use crate::{Module, Trait};
 use chrono::prelude::*;
 use core::time::Duration;
-use financial_primitives::IntoTypeIterator;
+use financial_primitives::{BalanceAware, CalcReturnType, CalcVolatilityType};
 use frame_support::codec::{Decode, Encode};
+use frame_support::dispatch::DispatchError;
 use frame_support::traits::UnixTime;
 use frame_support::{impl_outer_origin, parameter_types, weights::Weight};
 use frame_system as system;
@@ -28,18 +29,27 @@ use sp_runtime::{
     Perbill,
 };
 use std::cell::RefCell;
+use std::collections::HashMap;
 use substrate_fixed::types::I64F64;
 
 impl_outer_origin! {
     pub enum Origin for Test {}
 }
 
+type AccountId = u64;
+
 thread_local! {
     pub static NOW: RefCell<Duration> = RefCell::new(Duration::from_secs(0));
+    pub static BALANCES: RefCell<HashMap<(AccountId, Asset), FixedNumber>> = RefCell::new(HashMap::new());
 }
 
 pub fn set_now(now: Duration) {
     NOW.with(|n| *n.borrow_mut() = now);
+}
+
+#[allow(dead_code)]
+pub fn set_balance(account_id: AccountId, asset: Asset, balance: FixedNumber) {
+    BALANCES.with(|b| b.borrow_mut().insert((account_id, asset), balance));
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -59,7 +69,7 @@ impl system::Trait for Test {
     type BlockNumber = u64;
     type Hash = H256;
     type Hashing = BlakeTwo256;
-    type AccountId = u64;
+    type AccountId = AccountId;
     type Lookup = IdentityLookup<Self::AccountId>;
     type Header = Header;
     type Event = ();
@@ -84,6 +94,8 @@ pub type FixedNumber = I64F64;
 parameter_types! {
     pub const PriceCount: u32 = 10;
     pub const PricePeriod: u32 = 60;
+    pub const ReturnType: u32 = CalcReturnType::Regular.into_u32();
+    pub const VolCorType: i64 = CalcVolatilityType::Regular.into_i64();
 }
 
 pub struct TestUnixTime;
@@ -98,26 +110,49 @@ impl Trait for Test {
     type Event = ();
     type PriceCount = PriceCount;
     type PricePeriod = PricePeriod;
+    type ReturnType = ReturnType;
+    type VolCorType = VolCorType;
     type UnixTime = TestUnixTime;
     type Asset = Asset;
     type FixedNumberBits = i128;
     type FixedNumber = FixedNumber;
     type Price = FixedNumber;
+    type Balances = Balances;
 }
 
 pub type FinancialModule = Module<Test>;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Encode, Decode)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Encode, Decode, Hash, Ord, PartialOrd)]
 pub enum Asset {
+    Usd,
     Btc,
     Eos,
+    Eq,
+    Eth,
 }
 
-impl IntoTypeIterator for Asset {
-    type Iterator = sp_std::vec::IntoIter<Self>;
+pub struct Balances;
 
-    fn into_type_iter() -> Self::Iterator {
-        vec![Asset::Btc, Asset::Eos].into_iter()
+impl BalanceAware for Balances {
+    type AccountId = AccountId;
+    type Asset = Asset;
+    type Balance = FixedNumber;
+
+    fn balances(
+        account_id: &Self::AccountId,
+        assets: &[Self::Asset],
+    ) -> Result<Vec<Self::Balance>, DispatchError> {
+        BALANCES.with(|b| {
+            Ok(assets
+                .iter()
+                .map(|&a| {
+                    b.borrow()
+                        .get(&(*account_id, a))
+                        .copied()
+                        .unwrap_or(FixedNumber::default())
+                })
+                .collect())
+        })
     }
 }
 
@@ -130,6 +165,25 @@ pub fn initial_btc_prices() -> Vec<f64> {
 
 pub fn initial_eos_prices() -> Vec<f64> {
     vec![2.62, 2.67, 2.72, 2.72, 2.74, 2.75, 2.78, 3.02, 2.83, 2.89]
+}
+
+pub fn initial_eq_prices() -> Vec<FixedNumber> {
+    vec![
+        FixedNumber::max_value(),
+        FixedNumber::max_value(),
+        FixedNumber::max_value(),
+        FixedNumber::max_value(),
+        FixedNumber::max_value(),
+        FixedNumber::max_value(),
+        FixedNumber::max_value(),
+        FixedNumber::max_value(),
+        FixedNumber::max_value(),
+        FixedNumber::max_value(),
+    ]
+}
+
+pub fn initial_eth_prices() -> Vec<f64> {
+    vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 }
 
 fn create_duration(
@@ -171,6 +225,15 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
                     .collect(),
                 prev_period_now,
             ),
+            (Asset::Eq, initial_eq_prices(), prev_period_now),
+            (
+                Asset::Eth,
+                initial_eth_prices()
+                    .into_iter()
+                    .map(FixedNumber::from_num)
+                    .collect(),
+                prev_period_now,
+            ),
         ],
     }
     .assimilate_storage(&mut t)
@@ -184,4 +247,36 @@ pub fn new_test_ext_empty_storage() -> sp_io::TestExternalities {
         .build_storage::<Test>()
         .unwrap()
         .into()
+}
+
+pub fn new_test_ext_btc_eos_only() -> sp_io::TestExternalities {
+    let mut t = system::GenesisConfig::default()
+        .build_storage::<Test>()
+        .unwrap();
+
+    let prev_period_now = create_duration(2020, 9, 14, 11, 25, 0);
+    crate::GenesisConfig::<Test> {
+        prices: vec![
+            (
+                Asset::Btc,
+                initial_btc_prices()
+                    .into_iter()
+                    .map(FixedNumber::from_num)
+                    .collect(),
+                prev_period_now,
+            ),
+            (
+                Asset::Eos,
+                initial_eos_prices()
+                    .into_iter()
+                    .map(FixedNumber::from_num)
+                    .collect(),
+                prev_period_now,
+            ),
+        ],
+    }
+    .assimilate_storage(&mut t)
+    .unwrap();
+
+    t.into()
 }

@@ -14,20 +14,35 @@
         "nanos": "u32"
     },
     "FixedNumber": "u128",
+    "Price": "u128",
     "PriceUpdate": {
         "period_start": "Duration",
         "time": "Duration",
         "price": "FixedNumber"
+    },
+    "PriceLog": {
+        "latest_timestamp": "Duration",
+        "prices": "CapVec<Price>"
     },
     "CapVec": {
         "head_index": "u32",
         "len_cap": "u32",
         "items": "Vec<FixedNumber>"
     },
-    "FinancialMetrics": {
-        "timestamp": "Duration",
-        "log_returns": "Vec<FixedNumber>",
+    "AssetMetrics": {
+        "period_start": "Duration",
+        "period_end": "Duration",
+        "returns": "Vec<FixedNumber>",
         "volatility": "FixedNumber",
         "correlations": "Vec<(Asset, FixedNumber)>"
+    },
+    "FinancialMetrics": {
+        "period_start": "Duration",
+        "period_end": "Duration",
+        "assets": "Vec<Asset>",
+        "mean_returns": "Vec<FixedNumber>",
+        "volatilities": "Vec<FixedNumber>",
+        "correlations": "Vec<FixedNumber>",
+        "covariances": "Vec<FixedNumber>"
     }
 }

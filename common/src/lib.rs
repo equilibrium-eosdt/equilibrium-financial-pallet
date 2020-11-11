@@ -1,13 +1,11 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use core::slice::Iter;
-use financial_primitives::IntoTypeIterator;
 use frame_support::codec::{Decode, Encode};
 #[cfg(feature = "std")]
 use serde::{Deserialize, Serialize};
-use sp_std::vec;
 
-#[derive(Encode, Decode, Debug, PartialEq, Eq, Clone, Copy, Hash)]
+#[derive(Encode, Decode, Debug, PartialEq, Eq, Clone, Copy, Hash, Ord, PartialOrd)]
 #[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
 pub enum Asset {
     Unknown,
@@ -31,10 +29,15 @@ impl Asset {
     }
 }
 
-impl IntoTypeIterator for Asset {
-    type Iterator = sp_std::vec::IntoIter<Self>;
-
-    fn into_type_iter() -> Self::Iterator {
-        vec![Asset::Usd, Asset::Eq, Asset::Eth, Asset::Btc, Asset::Eos].into_iter()
+impl Asset {
+    pub fn value(&self) -> u8 {
+        match *self {
+            Asset::Unknown => 0x0,
+            Asset::Usd => 0x1,
+            Asset::Eq => 0x2,
+            Asset::Eth => 0x3,
+            Asset::Btc => 0x4,
+            Asset::Eos => 0x5,
+        }
     }
 }

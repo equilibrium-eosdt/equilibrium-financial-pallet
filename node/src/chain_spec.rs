@@ -3,13 +3,15 @@ use core::time::Duration;
 use financial_primitives::PricePeriod;
 use node_template_runtime::{
     AccountId, AuraConfig, BalancesConfig, FinancialConfig, FixedNumber, GenesisConfig,
-    GrandpaConfig, OracleConfig, Signature, SudoConfig, SystemConfig, WASM_BINARY,
+    GrandpaConfig, ManualTimestampConfig, OracleConfig, Signature, SudoConfig, SystemConfig,
+    WASM_BINARY,
 };
 use sc_service::ChainType;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_core::{sr25519, Pair, Public};
 use sp_finality_grandpa::AuthorityId as GrandpaId;
 use sp_runtime::traits::{IdentifyAccount, Verify};
+use std::convert::TryInto;
 use std::time::{SystemTime, UNIX_EPOCH};
 use substrate_fixed::traits::LossyFrom;
 
@@ -66,15 +68,14 @@ pub fn development_config() -> Result<ChainSpec, String> {
                 ],
                 true,
                 vec![
-                    (Asset::Usd, 1),
-                    (Asset::Eq, 25),
-                    (Asset::Eth, 250),
-                    (Asset::Btc, 10_000),
-                    (Asset::Eos, 3),
-                ]
-                .into_iter()
-                .map(|(a, x)| (a, FixedNumber::lossy_from(x)))
-                .collect(),
+                    // (Asset::Usd, 1),
+                    // (Asset::Eq, 25),
+                    // (Asset::Eth, 250),
+                    // (Asset::Btc, 10_000),
+                    // (Asset::Eos, 3),
+                ], // .into_iter()
+                   // .map(|(a, x)| (a, FixedNumber::lossy_from(x)))
+                   // .collect()
             )
         },
         // Bootnodes
@@ -150,11 +151,8 @@ pub fn local_testnet_config() -> Result<ChainSpec, String> {
     ))
 }
 
-fn get_prev_period_start(price_period: u32) -> Duration {
+fn get_prev_period_start(now: Duration, price_period: u32) -> Duration {
     let price_period = PricePeriod(price_period);
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Unable to get current Unix timestamp");
     let now_period_id = price_period
         .get_period_id(now)
         .expect("Unable to get current period id");
@@ -177,7 +175,10 @@ fn testnet_genesis(
     _enable_println: bool,
     prices: Vec<(Asset, FixedNumber)>,
 ) -> GenesisConfig {
-    let prev_period_start = get_prev_period_start(node_template_runtime::PricePeriod::get());
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Unable to get current Unix timestamp");
+    let prev_period_start = get_prev_period_start(now, node_template_runtime::PricePeriod::get());
     GenesisConfig {
         frame_system: Some(SystemConfig {
             // Add Wasm runtime to storage.
@@ -214,6 +215,9 @@ fn testnet_genesis(
                 .cloned()
                 .map(|(a, p)| (a, vec![p], prev_period_start))
                 .collect(),
+        }),
+        manual_timestamp: Some(ManualTimestampConfig {
+            timestamp: now.as_millis().try_into().expect("Too much milliseconds"),
         }),
     }
 }

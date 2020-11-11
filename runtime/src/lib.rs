@@ -25,6 +25,8 @@ use sp_std::prelude::*;
 use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
 
+use financial_primitives::{CalcReturnType, CalcVolatilityType};
+
 // A few exports that help ease life for downstream crates.
 pub use frame_support::{
     construct_runtime, parameter_types,
@@ -46,6 +48,12 @@ pub use financial_pallet;
 
 /// Import the oracle pallet.
 pub use oracle;
+
+/// Import the manual-timestamp pallet.
+pub use manual_timestamp;
+
+/// Import the portfolio pallet.
+pub use portfolio;
 
 /// An index to a block.
 pub type BlockNumber = u32;
@@ -266,6 +274,8 @@ impl pallet_sudo::Trait for Runtime {
 parameter_types! {
     pub const PriceCount: u32 = 30;
     pub const PricePeriod: u32 = 1440;
+    pub const ReturnType: u32 = CalcReturnType::Log.into_u32();
+    pub const VolCorType: i64 = CalcVolatilityType::Regular.into_i64();
 }
 
 pub type FixedNumber = substrate_fixed::types::I64F64;
@@ -273,13 +283,16 @@ pub type FixedNumber = substrate_fixed::types::I64F64;
 /// Configure the pallet financial in pallets/financial.
 impl financial_pallet::Trait for Runtime {
     type Event = Event;
-    type UnixTime = pallet_timestamp::Module<Runtime>;
+    type UnixTime = manual_timestamp::Module<Runtime>;
     type PriceCount = PriceCount;
     type PricePeriod = PricePeriod;
+    type ReturnType = ReturnType;
+    type VolCorType = VolCorType;
     type FixedNumberBits = i128;
     type FixedNumber = FixedNumber;
     type Price = FixedNumber;
     type Asset = Asset;
+    type Balances = portfolio::Module<Runtime>;
 }
 
 /// Configure the pallet oracle in pallets/oracle.
@@ -288,6 +301,18 @@ impl oracle::Trait for Runtime {
     type Price = FixedNumber;
     type OnPriceSet = financial_pallet::Module<Runtime>;
     type Asset = Asset;
+}
+
+/// Configure the pallet manual-timestamp in pallets/manual-timestamp.
+impl manual_timestamp::Trait for Runtime {
+    type Event = Event;
+}
+
+/// Configure the pallet portfolio in pallets/portfolio.
+impl portfolio::Trait for Runtime {
+    type Event = Event;
+    type Asset = Asset;
+    type Balance = FixedNumber;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
@@ -308,6 +333,8 @@ construct_runtime!(
 
         Financial: financial_pallet::{Module, Call, Storage, Event<T>, Config<T>},
         Oracle: oracle::{Module, Call, Storage, Event<T>, Config<T>},
+        ManualTimestamp: manual_timestamp::{Module, Call, Storage, Event<T>, Config},
+        Portfolio: portfolio::{Module, Call, Storage, Event<T>},
     }
 );
 

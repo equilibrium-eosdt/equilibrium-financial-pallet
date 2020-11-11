@@ -6,7 +6,11 @@ members = [
     'node',
     'runtime',
     'pallets/oracle',
+    'pallets/manual-timestamp',
+    'pallets/portfolio',
     'pallets/financial',
+    'integration-testing',
+    'integration-testing/integration-testing-macro',
     'financial-primitives',
     'common',
 ]

@@ -14,8 +14,9 @@
 // limitations under the License.
 
 use core::ops::{AddAssign, BitOrAssign, ShlAssign};
+use financial_primitives::CalcReturnType;
 use substrate_fixed::traits::{Fixed, FixedSigned, ToFixed};
-use substrate_fixed::transcendental::{ln, sqrt};
+use substrate_fixed::transcendental::{exp, ln};
 use substrate_fixed::types::I9F23;
 
 // Type of constants for transcendental operations declared in substrate_fixed crate
@@ -31,38 +32,6 @@ pub enum MathError {
 }
 
 pub type MathResult<T> = Result<T, MathError>;
-
-/// Indicates what returns will be used in calculations of volatilities, correlations, and value at
-/// risk: `Regular` or `Log` returns.
-///
-/// The choice of return type also governs the method for Value at Risk (VAR) calculation:
-/// * `Regular` type should be used when arithmetic returns are used and are assumed to be normally
-/// distributed;
-/// * `Log` normal type should be used when geometric returns (log returns) are used
-/// and are assumed to be normally distributed.
-///
-/// We suggest using the latter approach, as it doesn't
-/// lead to losses greater than a portfolio value unlike the normal VaR.
-#[derive(Copy, Clone)]
-pub enum CalcReturnType {
-    /// Regular returns.
-    Regular,
-
-    /// Log returns.
-    Log,
-}
-
-/// Indicates the method for calculating volatility: `Regular` or `Exponential`.
-#[derive(Copy, Clone)]
-pub enum CalcVolatilityType {
-    /// Regular type is a standard statistical approach of calculating standard deviation of
-    /// returns using simple average.
-    Regular,
-
-    /// Exponentially weighted type gives more weight to most recent data given the decay value or
-    /// period of exponentially weighted moving average.
-    Exponential(u32),
-}
 
 /// Indicates the method for calculating correlations: `Regular` or `Exponential`.
 ///
@@ -97,10 +66,6 @@ where
     ln(ratio).map_err(|_| MathError::Transcendental)
 }
 
-pub fn calc_return_exp_vola<F: Fixed>(x1: F, x2: F) -> Result<F, MathError> {
-    x2.checked_sub(x1).ok_or(MathError::Overflow)
-}
-
 pub fn calc_return_func<F>(return_type: CalcReturnType) -> impl Fn(F, F) -> MathResult<F> + Copy
 where
     F: FixedSigned + PartialOrd<ConstType> + From<ConstType>,
@@ -108,19 +73,6 @@ where
 {
     match return_type {
         CalcReturnType::Regular => calc_return,
-        CalcReturnType::Log => calc_log_return,
-    }
-}
-
-pub fn calc_return_func_exp_vola<F>(
-    return_type: CalcReturnType,
-) -> impl Fn(F, F) -> MathResult<F> + Copy
-where
-    F: FixedSigned + PartialOrd<ConstType> + From<ConstType>,
-    F::Bits: Copy + ToFixed + AddAssign + BitOrAssign + ShlAssign,
-{
-    match return_type {
-        CalcReturnType::Regular => calc_return_exp_vola,
         CalcReturnType::Log => calc_log_return,
     }
 }
@@ -212,21 +164,12 @@ pub fn regular_vola<F: Fixed>(n: usize, sum: F) -> MathResult<F> {
     Ok(c)
 }
 
-pub fn exp_vola<F>(return_type: CalcReturnType, var: F, price: F) -> MathResult<F>
+pub fn mul<'a, F, I1, I2>(iter1: I1, iter2: I2) -> impl Iterator<Item = MathResult<F>> + 'a
 where
-    F: Fixed + PartialOrd<ConstType>,
+    F: 'a + Fixed,
+    I1: 'a + Iterator<Item = F>,
+    I2: 'a + Iterator<Item = F>,
 {
-    let a: F = sqrt(var).map_err(|_| MathError::Transcendental)?;
-    match return_type {
-        CalcReturnType::Regular => a.checked_div(price).ok_or(MathError::DivisionByZero),
-        CalcReturnType::Log => Ok(a),
-    }
-}
-
-pub fn mul<'a, F: 'a + Fixed, I: 'a + Iterator<Item = F>>(
-    iter1: I,
-    iter2: I,
-) -> impl Iterator<Item = MathResult<F>> + 'a {
     iter1
         .zip(iter2)
         .map(|(x1, x2)| x1.checked_mul(x2).ok_or(MathError::Overflow))
@@ -249,6 +192,64 @@ pub fn exp_corr<F: Fixed>(covariance: F, vol1: F, vol2: F) -> MathResult<F> {
         .ok_or(MathError::DivisionByZero)?;
     let e = d.checked_div(vol2).ok_or(MathError::DivisionByZero)?;
     Ok(e)
+}
+
+pub fn from_num<F: Fixed>(n: i8) -> F {
+    F::from_num(n)
+}
+
+pub fn covariance<'a, F>(
+    correlation_matrix: &'a [F],
+    volatilities: &'a [F],
+) -> impl Iterator<Item = MathResult<F>> + 'a
+where
+    F: Fixed,
+{
+    volatilities
+        .iter()
+        .copied()
+        .flat_map(move |v1| volatilities.iter().map(move |v2| (v1, v2)))
+        .zip(correlation_matrix.iter())
+        .map(|((v1, &v2), &c)| {
+            v1.checked_mul(v2)
+                .and_then(|v1v2| v1v2.checked_mul(c))
+                .ok_or(MathError::Overflow)
+        })
+}
+
+pub fn regular_value_at_risk<F>(
+    z_score: u32,
+    portfolio_volatility: F,
+    total_weighted_mean_return: F,
+) -> MathResult<F>
+where
+    F: Fixed,
+{
+    let a = portfolio_volatility
+        .checked_mul(F::from_num(z_score))
+        .ok_or(MathError::Overflow)?;
+    a.checked_sub(total_weighted_mean_return)
+        .ok_or(MathError::Overflow)
+}
+
+pub fn log_value_at_risk<F>(
+    z_score: u32,
+    portfolio_volatility: F,
+    total_weighted_mean_return: F,
+) -> MathResult<F>
+where
+    F: FixedSigned + PartialOrd<ConstType> + From<ConstType>,
+    F::Bits: Copy + ToFixed + AddAssign + BitOrAssign + ShlAssign,
+{
+    let a = portfolio_volatility
+        .checked_mul(F::from_num(z_score))
+        .ok_or(MathError::Overflow)?;
+    let b = total_weighted_mean_return
+        .checked_sub(a)
+        .ok_or(MathError::Overflow)?;
+    let c = exp::<F, F>(b).map_err(|_| MathError::Transcendental)?;
+
+    F::from_num(1).checked_sub(c).ok_or(MathError::Overflow)
 }
 
 #[cfg(test)]
@@ -372,19 +373,6 @@ mod tests {
         assert_ok!(&actual);
         let actual: f64 = actual.unwrap().lossy_into();
         let expected = 93177.2077918920;
-
-        assert_abs_diff_eq!(actual, expected, epsilon = 1e-8);
-    }
-
-    #[test]
-    fn exp_vola_expample() {
-        let variance = FixedNumber::from_num(114954.3177623650);
-        let price = FixedNumber::from_num(9_081.76);
-        let actual = exp_vola(CalcReturnType::Regular, variance, price);
-        assert_ok!(actual);
-        let actual: FixedNumber = actual.unwrap();
-        let actual: f64 = actual.lossy_into();
-        let expected = 0.0373329770530381;
 
         assert_abs_diff_eq!(actual, expected, epsilon = 1e-8);
     }

@@ -20,9 +20,8 @@ pub mod capvec;
 
 use core::time::Duration;
 use frame_support::dispatch::DispatchError;
-use sp_std::iter::Iterator;
-
-pub struct Asset;
+use sp_std::convert::{From, TryFrom};
+use sp_std::vec::Vec;
 
 pub trait OnPriceSet {
     type Asset;
@@ -31,10 +30,15 @@ pub trait OnPriceSet {
     fn on_price_set(asset: Self::Asset, value: Self::Price) -> Result<(), DispatchError>;
 }
 
-pub trait IntoTypeIterator: Sized {
-    type Iterator: Iterator<Item = Self>;
+pub trait BalanceAware {
+    type AccountId;
+    type Asset;
+    type Balance;
 
-    fn into_type_iter() -> Self::Iterator;
+    fn balances(
+        account_id: &Self::AccountId,
+        assets: &[Self::Asset],
+    ) -> Result<Vec<Self::Balance>, DispatchError>;
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -74,6 +78,92 @@ impl PricePeriod {
 
     pub fn is_valid_period_start(&self, period_start: Duration) -> PricePeriodResult<bool> {
         Ok(period_start == self.get_period_start(period_start)?)
+    }
+}
+
+/// Indicates what returns will be used in calculations of volatilities, correlations, and value at
+/// risk: `Regular` or `Log` returns.
+///
+/// The choice of return type also governs the method for Value at Risk (VAR) calculation:
+/// * `Regular` type should be used when arithmetic returns are used and are assumed to be normally
+/// distributed;
+/// * `Log` normal type should be used when geometric returns (log returns) are used
+/// and are assumed to be normally distributed.
+///
+/// We suggest using the latter approach, as it doesn't
+/// lead to losses greater than a portfolio value unlike the normal VaR.
+#[derive(Copy, Clone, Debug)]
+pub enum CalcReturnType {
+    /// Regular returns.
+    Regular,
+
+    /// Log returns.
+    Log,
+}
+
+impl CalcReturnType {
+    pub const fn into_u32(&self) -> u32 {
+        match self {
+            CalcReturnType::Regular => 0,
+            CalcReturnType::Log => 1,
+        }
+    }
+}
+
+impl TryFrom<u32> for CalcReturnType {
+    type Error = ();
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(CalcReturnType::Regular),
+            1 => Ok(CalcReturnType::Log),
+            _ => Err(()),
+        }
+    }
+}
+
+impl From<CalcReturnType> for u32 {
+    fn from(value: CalcReturnType) -> Self {
+        value.into_u32()
+    }
+}
+
+/// Indicates the method for calculating volatility: `Regular` or `Exponential`.
+#[derive(Copy, Clone, Debug)]
+pub enum CalcVolatilityType {
+    /// Regular type is a standard statistical approach of calculating standard deviation of
+    /// returns using simple average.
+    Regular,
+
+    /// Exponentially weighted type gives more weight to most recent data given the decay value or
+    /// period of exponentially weighted moving average.
+    Exponential(u32),
+}
+
+impl CalcVolatilityType {
+    pub const fn into_i64(&self) -> i64 {
+        match self {
+            CalcVolatilityType::Regular => -1,
+            CalcVolatilityType::Exponential(n) => *n as i64,
+        }
+    }
+}
+
+impl TryFrom<i64> for CalcVolatilityType {
+    type Error = ();
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        match value {
+            -1 => Ok(CalcVolatilityType::Regular),
+            n if n >= 0 => Ok(CalcVolatilityType::Exponential(n as u32)),
+            _ => Err(()),
+        }
+    }
+}
+
+impl From<CalcVolatilityType> for i64 {
+    fn from(value: CalcVolatilityType) -> i64 {
+        value.into_i64()
     }
 }
 

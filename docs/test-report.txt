@@ -4,90 +4,123 @@ running 0 tests
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 
 
-running 75 tests
+running 108 tests
 test math::tests::calc_return::calc_log_return_x1_is_negative ... ok
 test math::tests::calc_return::calc_log_return_x1_is_zero ... ok
 test math::tests::calc_return::calc_log_return_valid ... ok
-test math::tests::calc_return::calc_return_iter_empty ... ok
 test math::tests::calc_return::calc_return_valid ... ok
 test math::tests::calc_return::calc_return_valid_positive ... ok
-test math::tests::calc_return::calc_return_x1_is_zero ... ok
+test math::tests::calc_return::calc_return_iter_empty ... ok
 test math::tests::calc_return::calc_return_vec_one_item ... ok
 test math::tests::decay::decay_expample ... ok
+test math::tests::calc_return::calc_return_x1_is_zero ... ok
 test math::tests::decay::decay_simple ... ok
-test math::tests::decay::decay_zero ... ok
 test math::tests::calc_return::calc_return_vec_regular_valid ... ok
+test math::tests::decay::decay_zero ... ok
 test math::tests::recurrent_ewma_step::recurrent_ewma_step_add_overflow ... ok
 test math::tests::recurrent_ewma_step::recurrent_ewma_step_diff_is_zero ... ok
-test math::tests::last_recurrent_ewma_example ... ok
 test math::tests::recurrent_ewma_step::recurrent_ewma_step_example ... ok
 test math::tests::recurrent_ewma_step::recurrent_ewma_step_mul_overflow ... ok
+test math::tests::last_recurrent_ewma_example ... ok
 test math::tests::recurrent_ewma_step::recurrent_ewma_step_valid_negative ... ok
-test math::tests::exp_vola_expample ... ok
 test math::tests::recurrent_ewma_step::recurrent_ewma_step_valid_zero ... ok
 test math::tests::recurrent_ewma_step_example ... ok
 test math::tests::squared_example ... ok
 test math::tests::calc_return::calc_return_vec_log_valid ... ok
-test tests::calc_linear_return_for_eos_using_only_genesis ... ok
-test tests::calc_log_return_for_eos_using_only_genesis ... ok
-test tests::calc_correlation_btc_eos_log_exponential ... ok
-test tests::calc_log_return_for_btc_using_only_genesis ... ok
-test tests::calc_correlation_btc_eos_log_regular ... ok
-test tests::calc_linear_return_for_btc_using_only_genesis ... ok
-test tests::calc_corr_btc_eos_regular_regular ... ok
-test tests::calc_corr_btc_eos_regular_exp ... ok
-test tests::calc_corr_btc_eos_log_regular ... ok
-test tests::calc_correlation_different_price_periods_results_in_periods_intersection ... ok
-test tests::calc_volatility_btc_regular_exponential ... ok
-test tests::calc_corr_btc_eos_log_exponential ... ok
 test tests::calc_linear_return_for_btc_using_some_oracle_prices ... ok
-test tests::calc_volatility_btc_log_regular ... ok
-test tests::calc_volatility_btc_log_exponential ... ok
-test tests::calc_volatility_btc_regular_regular ... ok
-test tests::calc_volatility_eos_log_regular ... ok
-test tests::calc_vol_btc_regular_exp ... ok
-test tests::calc_vol_btc_regular_regular ... ok
-test tests::calc_volatility_eos_regular_regular ... ok
-test tests::calc_vol_eos_log_regular ... ok
-test tests::calc_vol_eos_regular_regular ... ok
-test tests::calc_vol_btc_log_exp ... ok
-test tests::new_prices::max_periods_is_zero ... ok
-test tests::new_prices::max_periods_is_one ... ok
-test tests::new_prices::no_last_price_no_empty_periods ... ok
-test tests::initial_prices_state_with_nonempty_genesis ... ok
+test tests::calc_linear_return_for_btc_using_only_genesis ... ok
+test tests::calc_corr::calc_corr_btc_eos_regular_exp ... ok
+test tests::calc_corr::calc_corr_exponential_asset_with_big_prices ... ok
+test tests::calc_corr::calc_corr_regular_asset_with_big_prices ... ok
+test tests::calc_correlation_different_price_periods_results_in_periods_intersection ... ok
+test tests::calc_corr::calc_corr_btc_eos_regular_regular ... ok
+test tests::calc_corr::calc_corr_regular_asset_with_zero_prices ... ok
+test tests::calc_corr::calc_corr_asset_without_prices ... ok
+test tests::calc_corr::calc_corr_btc_eos_log_regular ... ok
+test tests::calc_corr::calc_corr_exponential_asset_with_zero_prices ... ok
+test tests::calc_corr::calc_corr_btc_eos_log_exponential ... ok
+test tests::calc_vol::calc_vol_asset_without_prices ... ok
+test tests::calc_vol::calc_vol_btc_log_exp ... ok
+test tests::calc_portf::calc_portf_var_btc_eos_regular_regular_2 ... ok
+test tests::calc_vol::calc_vol_btc_log_regular ... ok
+test tests::calc_portf::calc_portf_vol_btc_eos_regular_regular_3 ... ok
+test tests::calc_log_return_for_eos_using_only_genesis ... ok
+test tests::calc_portf::calc_portf_vol_btc_eos_regular_regular_2 ... ok
+test tests::calc_vol::calc_vol_btc_regular_regular ... ok
+test tests::calc_portf::calc_portf_var_btc_eos_regular_regular_3 ... ok
+test tests::calc_log_return_for_btc_using_only_genesis ... ok
+test tests::calc_vol::calc_vol_btc_regular_exp ... ok
+test tests::calc_portf::calc_portf_var_btc_eos_regular_regular_1 ... ok
+test tests::calc_portf::calc_portf_vol_btc_eos_regular_regular_1 ... ok
+test tests::calc_vol::calc_vol_eos_log_regular ... ok
+test tests::index_range::empty_range ... ok
+test tests::index_range::empty_intersaction ... ok
+test tests::index_range::intersaction_not_included_completely ... ok
+test tests::calc_vol::calc_vol_eos_regular_regular ... ok
+test tests::calc_linear_return_for_eos_using_only_genesis ... ok
+test tests::calc_vol::calc_vol_exponential_asset_with_zero_prices ... ok
+test tests::calc_vol::calc_vol_regular_asset_with_big_prices ... ok
+test tests::first_price_with_empty_genesis ... ok
 test tests::initial_prices_state_with_empty_genesis ... ok
-test tests::new_prices::some_last_price_some_empty_periods_less_than_max ... ok
-test tests::calc_vol_btc_log_regular ... ok
-test tests::new_prices::some_last_price_some_empty_periods_slightly_more_than_max ... ok
+test tests::calc_vol::calc_vol_regular_asset_with_zero_prices ... ok
+test tests::new_prices::max_periods_is_one ... ok
+test tests::new_prices::max_periods_is_zero ... ok
 test tests::new_prices::some_last_price_no_empty_periods ... ok
 test tests::new_prices::some_last_price_some_empty_periods_equal_to_max ... ok
 test tests::new_prices::some_last_price_some_empty_periods_significantly_more_than_max ... ok
-test tests::first_price_with_empty_genesis ... ok
-test tests::price_period::invalid_period_start ... ok
+test tests::calc_vol::calc_vol_eos_regular_exp ... ok
+test tests::new_price_is_a_few_periods_ahead ... ok
+test tests::new_prices::some_last_price_some_empty_periods_slightly_more_than_max ... ok
 test tests::price_period::elapsed_period_count_is_too_large ... ok
+test tests::price_period::info_for_neighbour_periods ... ok
+test tests::price_period::info_for_distant_periods ... ok
+test tests::new_prices::some_last_price_some_empty_periods_less_than_max ... ok
+test tests::price_period::invalid_period_start ... ok
+test tests::price_period::period_changed_significantly ... ok
 test tests::price_period::period_changed_slightly ... ok
 test tests::price_period::period_is_in_the_past ... ok
-test tests::price_period::zero_period ... ok
 test tests::price_period::period_remains_unchanged ... ok
-test tests::price_period::period_changed_significantly ... ok
-test tests::new_prices::no_last_price_some_empty_periods ... ok
-test tests::price_period::info_for_distant_periods ... ok
-test tests::new_price_has_arravied_while_prices_countainer_is_full ... ok
-test tests::new_price_is_in_next_period ... ok
-test tests::price_period::info_for_neighbour_periods ... ok
+test tests::price_period::zero_period ... ok
+test tests::range_intersection::empty_iterator ... ok
+test tests::range_intersection::empty_range ... ok
+test tests::range_intersection::not_intersected_ranges ... ok
+test tests::range_intersection::one_range ... ok
+test tests::range_intersection::three_intersected_ranges ... ok
+test tests::range_intersection::two_intersected_ranges ... ok
+test tests::range_intersection::two_ranges_one_empty ... ok
+test tests::stateful_calculations::btc_eos_regular_regular_cor ... ok
+test tests::stateful_calculations::btc_eos_regular_exp_cor ... ok
+test tests::calc_vol::calc_vol_exponential_asset_with_big_prices ... ok
+test tests::calc_vol::calc_vol_eos_log_exp ... ok
+test tests::stateful_calculations::btc_regular_exp_vol ... ok
 test tests::new_price_is_many_periods_ahead ... ok
-test tests::new_price_is_a_few_periods_ahead ... ok
+test tests::stateful_calculations::btc_eos_log_regular_cor ... ok
+test tests::stateful_calculations::btc_eos_log_exp_cor ... ok
+test tests::stateful_calculations::btc_log_exp_vol ... ok
+test tests::stateful_calculations::btc_log_ret ... ok
+test tests::stateful_calculations::btc_log_regular_vol ... ok
+test tests::stateful_calculations::btc_regular_ret ... ok
+test tests::stateful_calculations::btc_regular_regular_vol ... ok
+test tests::stateful_calculations::eos_regular_exp_vol ... ok
+test tests::stateful_calculations::eos_regular_regular_vol ... ok
+test tests::stateful_calculations::eos_log_ret ... ok
+test tests::stateful_calculations::eos_regular_ret ... ok
+test tests::stateful_calculations::eos_log_regular_vol ... ok
+test tests::stateful_calculations::eos_log_exp_vol ... ok
 test tests::new_price_is_in_the_past ... ok
+test tests::new_price_is_in_next_period ... ok
 test tests::new_price_is_in_current_period ... ok
+test tests::initial_prices_state_with_nonempty_genesis ... ok
 test tests::wrong_now_in_the_distant_future ... ok
+test tests::new_price_has_arravied_while_prices_countainer_is_full ... ok
 
-test result: ok. 75 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+test result: ok. 108 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 
 
-running 13 tests
-test capvec::tests::test_empty ... ok
+running 14 tests
 test capvec::tests::test_capped ... ok
 test capvec::tests::test_iter_range_both_parts_range ... ok
+test capvec::tests::test_empty ... ok
 test capvec::tests::test_iter_range_empty_range ... ok
 test capvec::tests::test_iter_range_first_part_range ... ok
 test capvec::tests::test_iter_range_full_range ... ok
@@ -98,8 +131,26 @@ test capvec::tests::test_last_non_empty ... ok
 test capvec::tests::test_not_capped ... ok
 test tests::price_period::period_id_are_different_for_different_periods ... ok
 test tests::price_period::period_id_are_same_within_period ... ok
+test capvec::tests::test_zero_cap ... ok
 
-test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+
+running 2 tests
+test tests::genesis_timestamp ... ok
+test tests::advance_secs ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 
 
 running 0 tests
@@ -124,30 +175,54 @@ test tests::set_price_is_visible_through_storage ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 
 
-running 0 tests
+running 3 tests
+test tests::default_balance_is_zero ... ok
+test tests::set_balance ... ok
+test tests::balance_aware_balances ... ok
 
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
-
-
-running 0 tests
-
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 
 
-running 0 tests
-
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
-
-
-running 6 tests
+running 7 tests
+test src/capvec.rs - capvec::CapVec<T>::len_cap (line 149) ... ok
 test src/capvec.rs - capvec::CapVec<T>::new (line 78) ... ok
-test src/capvec.rs - capvec::CapVec<T>::len_cap (line 138) ... ok
 test src/capvec.rs - capvec::CapVec<T>::push (line 91) ... ok
+test src/capvec.rs - capvec::CapVec<T>::iter_range (line 124) ... ok
 test src/capvec.rs - capvec::CapVec<T>::iter (line 106) ... ok
-test src/capvec.rs - capvec::CapVec<T>::last (line 157) ... ok
-test src/capvec.rs - capvec::CapVec<T>::last (line 152) ... ok
+test src/capvec.rs - capvec::CapVec<T>::last (line 163) ... ok
+test src/capvec.rs - capvec::CapVec<T>::last (line 168) ... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 
 
 running 0 tests

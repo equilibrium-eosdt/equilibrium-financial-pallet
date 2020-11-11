@@ -168,6 +168,18 @@ package = 'financial-pallet'
 path = '../pallets/financial'
 version = '0.1.0'
 
+[dependencies.manual-timestamp]
+default-features = false
+package = 'manual-timestamp'
+path = '../pallets/manual-timestamp'
+version = '0.1.0'
+
+[dependencies.portfolio]
+default-features = false
+package = 'portfolio'
+path = '../pallets/portfolio'
+version = '0.1.0'
+
 [dependencies.common]
 default-features = false
 package = 'common'
@@ -178,6 +190,12 @@ version = '0.1.0'
 default-features = false
 git = "https://github.com/encointer/substrate-fixed"
 package = "substrate-fixed"
+
+[dependencies.financial-primitives]
+default-features = false
+package = "financial-primitives"
+path = "../financial-primitives"
+version = "0.1.0"
 
 [features]
 default = ['std']
@@ -211,6 +229,7 @@ std = [
     'oracle/std',
     'substrate-fixed/std',
     'common/std',
+    'manual-timestamp/std',
 ]
 
 [build-dependencies.wasm-builder-runner]
