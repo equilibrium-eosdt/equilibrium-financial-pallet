@@ -41,6 +41,7 @@ version = "2.0.0-rc6"
 default-features = false
 git = "https://github.com/encointer/substrate-fixed"
 package = "substrate-fixed"
+version = "0.5.4"
 
 [dependencies.sp-std]
 default-features = false
