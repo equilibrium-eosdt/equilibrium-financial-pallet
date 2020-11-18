@@ -6,7 +6,6 @@ use crate::test_context::TestContext;
 use crate::{join_chain_calls, requester::call_chain, TestRuntime};
 use common::Asset;
 use futures::{lock::Mutex, try_join};
-use integration_testing_macro::tuple_to_vec;
 use sp_keyring::AccountKeyring;
 use std::{marker::PhantomData, sync::Arc};
 use substrate_subxt::Client;

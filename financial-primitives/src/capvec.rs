@@ -48,14 +48,14 @@ fn split_range(
         let upper_end = range.end + head;
 
         if upper_start < length && upper_end <= length {
-            // Range fits in the upper part
+            // Range fits into the upper part
             OneOfThree::Second(upper_start..upper_end)
         } else {
             let lower_start = upper_start % length;
             let lower_end = upper_end % length;
 
             if lower_start < head && lower_end <= head {
-                // Range fits in the lower part
+                // Range fits into the lower part
                 OneOfThree::Second(lower_start..lower_end)
             } else {
                 // Range located in both upper and lower parts
@@ -65,6 +65,10 @@ fn split_range(
     }
 }
 
+/// Vector-like data structure wich has maximum length.
+///
+/// `CapVec` can not contain more than `len_cap` elements. If `CapVec` already contains `len_cap`
+/// elements and new one is pushed to the end, then the element at the beginning is simultaneously removed.
 #[derive(Encode, Decode, Clone, Default, PartialEq, Eq, Debug)]
 pub struct CapVec<T> {
     head_index: u32,
@@ -74,6 +78,8 @@ pub struct CapVec<T> {
 
 use sp_std::fmt::Debug;
 impl<T> CapVec<T> {
+    /// Constructs a new, empty `CapVec<T>` with the specified maximum length.
+    ///
     /// # Examples
     /// ```
     /// # use financial_primitives::capvec::CapVec;
@@ -87,6 +93,11 @@ impl<T> CapVec<T> {
         }
     }
 
+    /// Appends an element to the back of the `CapVec`.
+    ///
+    /// If after appending collection's length is equal to `len_cap` then first element is removed
+    /// automatically from the front.
+    ///
     /// # Examples
     /// ```
     /// # use financial_primitives::capvec::CapVec;
@@ -102,6 +113,8 @@ impl<T> CapVec<T> {
         }
     }
 
+    /// Returns an iterator over items.
+    ///
     /// # Examples
     /// ```
     /// # use financial_primitives::capvec::CapVec;
@@ -120,6 +133,8 @@ impl<T> CapVec<T> {
         first_part.chain(last_part)
     }
 
+    /// Returns an iterator over specified range of items.
+    ///
     /// # Examples
     /// ```
     /// # use financial_primitives::capvec::CapVec;
@@ -145,6 +160,8 @@ impl<T> CapVec<T> {
         first_part.chain(last_part)
     }
 
+    /// Returns maximum length of the collection.
+    ///
     /// # Examples
     /// ```
     /// # use financial_primitives::capvec::CapVec;
@@ -155,10 +172,21 @@ impl<T> CapVec<T> {
         self.len_cap
     }
 
+    /// Returns current length of the collection.
+    ///
+    /// # Examples
+    /// ```
+    /// # use financial_primitives::capvec::CapVec;
+    /// let mut items = CapVec::<u64>::new(5);
+    /// items.push(1);
+    /// items.push(2);
+    /// assert_eq!(items.len(), 2);
     pub fn len(&self) -> usize {
         self.items.len()
     }
 
+    /// Returns the last element, or `None` if it is empty.
+    ///
     /// # Examples
     /// ```
     /// # use financial_primitives::capvec::CapVec;

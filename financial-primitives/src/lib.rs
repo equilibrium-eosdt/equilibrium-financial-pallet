@@ -13,9 +13,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//#![warn(missing_docs)]
+//! # Common Primitives for Financial Pallet
+//! ## Overview
+//!
+//! Use types defined in this module to integrate Financial Pallet into your Chain.
+
+#![warn(missing_docs)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
+/// Defines `CapVec` struct which is a vector that has maximum size.
 pub mod capvec;
 
 use core::time::Duration;
@@ -23,35 +29,59 @@ use frame_support::dispatch::DispatchError;
 use sp_std::convert::{From, TryFrom};
 use sp_std::vec::Vec;
 
+/// Implementation of `OnPriceSet` trait can handle asset price changes.
+///
+/// Financial pallet implements this trait to be able to process price changes.
 pub trait OnPriceSet {
+    /// System wide asset type
     type Asset;
+    /// System wide price type
     type Price;
 
+    /// It should be called on each price update.
     fn on_price_set(asset: Self::Asset, value: Self::Price) -> Result<(), DispatchError>;
 }
 
+/// Implementation of `BalanceAware` provides information about asset balances for accounts.
+///
+/// Financial pallet calls this trait to get current balances for the specified account.
 pub trait BalanceAware {
+    /// System wide account id type
     type AccountId;
+    /// System wide asset type
     type Asset;
+    /// System wide balance type
     type Balance;
 
+    /// Returns collection of current balances of specified `assets` for the specified `account_id`.
+    ///
+    /// Note that returned balances must be in the same order as `assets` argument items are.
     fn balances(
         account_id: &Self::AccountId,
         assets: &[Self::Asset],
     ) -> Result<Vec<Self::Balance>, DispatchError>;
 }
 
+/// Error that can be returned as a result of some operation with `PricePeriod`.
 #[derive(Debug, Eq, PartialEq)]
 pub enum PricePeriodError {
+    /// Division by zero
     DivisionByZero,
+    /// Arithmetical overflow
     Overflow,
 }
 
+/// Result returned by any `PricePeriod` operation.
 pub type PricePeriodResult<T> = Result<T, PricePeriodError>;
 
+/// Using instance of `PricePeriod` you can perform several temporal calculations.
 pub struct PricePeriod(pub u32);
 
 impl PricePeriod {
+    /// Returns priod id.
+    ///
+    /// You can use it to compare periods of several timestamps.
+    /// For example, all timestamps within the same period have the same period id.
     pub fn get_period_id(&self, now: Duration) -> Result<u64, PricePeriodError> {
         let seconds = now.as_secs();
         let period = self.0 as u64;
@@ -62,6 +92,7 @@ impl PricePeriod {
             .ok_or(PricePeriodError::DivisionByZero)
     }
 
+    /// Returns the earliest timestamp possible for a period with a given `period_id`.
     pub fn get_period_id_start(&self, period_id: u64) -> Result<Duration, PricePeriodError> {
         let period = self.0 as u64;
         let seconds: Result<_, PricePeriodError> = period_id
@@ -72,10 +103,16 @@ impl PricePeriod {
         Ok(Duration::from_secs(seconds?))
     }
 
+    /// Returns the earliest timestamp possible for a period which given timestamp `now` belongs
+    /// to.
     pub fn get_period_start(&self, now: Duration) -> Result<Duration, PricePeriodError> {
         self.get_period_id_start(self.get_period_id(now)?)
     }
 
+    /// Checks if `period_start` is valid period start.
+    ///
+    /// It is considered valid if there exist some period for which `period_start` timestamp is the
+    /// earliest timestamp possible.
     pub fn is_valid_period_start(&self, period_start: Duration) -> PricePeriodResult<bool> {
         Ok(period_start == self.get_period_start(period_start)?)
     }
@@ -102,6 +139,8 @@ pub enum CalcReturnType {
 }
 
 impl CalcReturnType {
+    /// Converts value of `CalcReturnType` to the internal representation suitable for use as
+    /// a runtime parameter
     pub const fn into_u32(&self) -> u32 {
         match self {
             CalcReturnType::Regular => 0,
@@ -141,6 +180,8 @@ pub enum CalcVolatilityType {
 }
 
 impl CalcVolatilityType {
+    /// Converts value of `CalcVolatilityType` to the internal representation suitable for use as
+    /// a runtime parameter
     pub const fn into_i64(&self) -> i64 {
         match self {
             CalcVolatilityType::Regular => -1,

@@ -20,7 +20,7 @@ pub trait Trait: frame_system::Trait {
 }
 
 decl_storage! {
-    trait Store for Module<T: Trait> as OracleModule {
+    trait Store for Module<T: Trait> as PortfolioModule {
         Balances get(fn balances): double_map hasher(blake2_128_concat) T::AccountId, hasher(identity) T::Asset => T::Balance;
     }
 }

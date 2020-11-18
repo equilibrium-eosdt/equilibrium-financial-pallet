@@ -14,6 +14,7 @@ pub enum Asset {
     Eth,
     Btc,
     Eos,
+    Dot,
 }
 
 impl Default for Asset {
@@ -24,7 +25,14 @@ impl Default for Asset {
 
 impl Asset {
     pub fn iterator() -> Iter<'static, Asset> {
-        static ASSETS: [Asset; 5] = [Asset::Usd, Asset::Eq, Asset::Eth, Asset::Btc, Asset::Eos];
+        static ASSETS: [Asset; 6] = [
+            Asset::Usd,
+            Asset::Eq,
+            Asset::Eth,
+            Asset::Btc,
+            Asset::Eos,
+            Asset::Dot,
+        ];
         ASSETS.iter()
     }
 }
@@ -38,6 +46,7 @@ impl Asset {
             Asset::Eth => 0x3,
             Asset::Btc => 0x4,
             Asset::Eos => 0x5,
+            Asset::Dot => 0x6,
         }
     }
 }

@@ -1,7 +1,8 @@
-use super::{financial, manual_timestamp, oracle, timestamp};
+use super::{financial, manual_timestamp, oracle, portfolio, timestamp};
 use crate::financial::FinancialEventsDecoder;
 use crate::manual_timestamp::ManualTimestampEventsDecoder;
 use crate::oracle::OracleEventsDecoder;
+use crate::portfolio::PortfolioEventsDecoder;
 use crate::timestamp::TimestampEventsDecoder;
 use common::Asset;
 use sp_runtime::traits::{BlakeTwo256, IdentifyAccount, Verify};
@@ -29,6 +30,7 @@ impl TestRuntime {
         decoder.with_timestamp();
         decoder.with_financial();
         decoder.with_manual_timestamp();
+        decoder.with_portfolio();
 
         decoder.register_type_size::<u64>("u64");
 
@@ -85,6 +87,12 @@ impl financial::Financial for TestRuntime {
     type Asset = Asset;
     type FixedNumber = FixedNumber;
     type Price = FixedNumber;
+}
+
+impl portfolio::Portfolio for TestRuntime {
+    type Asset = Asset;
+    type FixedNumber = FixedNumber;
+    type Balance = FixedNumber;
 }
 
 impl manual_timestamp::ManualTimestamp for TestRuntime {}

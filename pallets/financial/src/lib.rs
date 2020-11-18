@@ -14,15 +14,303 @@
 // limitations under the License.
 
 //! # Financial Pallet Module
-//! ## Overview
 //!
 //! Equilibrium's Financial Pallet is an open-source substrate module that subscribes to external
 //! price feed/oracle, gathers asset prices and calculates financial metrics based on the
 //! information collected.
 //!
-//! ## Genesis Config
+//! - [`financial::Trait`](./trait.Trait.html)
+//! - [`Call`](./enum.Call.html)
+//! - [`Module`](./struct.Module.html)
+//! - [`Financial`](./trait.Financial.html)
+//!
+//! ## Overview
+//!
+//! Financial pallet listens to the external Oracle pallet for price updates. It stores several recent updates so you
+//! can calculate various financial metrics upon them:
+//!
+//! - Return (regular and logarithmic) for a given asset
+//! - Volatility (regular and EWMA) for a given asset
+//! - EWMA Rv for a given asset
+//! - Correlation (regular and EWMA) between two given assets
+//! - Portfolio volatility (regular and EWMA)
+//! - Portfolio Value at Risk (regular and EWMA)
+//!
+//! ### Implementations
+//!
+//! Finantial Pallet defined it's own trait [`Financial`](./trait.Financial.html) and implements it.
+//!
+//! ## Interface
+//!
+//! ### Dispatchable Functions
+//!
+//! - `recalc_portfolio` - Recalculates financial metrics for a given user account and saves them to the
+//! storage.
+//! - `recalc_asset` - Recalculates financial metrics for a given asset and saves them to the
+//! storage.
+//! - `recalc` - Recalculates financial metrics for all known assets and saves them to the storage.
+//!
+//! ## Usage
+//!
+//! Use `Financial` trait functions to calculate financial metrics.
+//!
+//! Suppose we defined `Trait` for some another module that has associated type `type FinancialFuncs: financial_pallet::Financial`. Then we can calculate regular return for Btc like so:
+//! regular return for Btc
+//!
+//! ```
+//! # use financial_primitives::{CalcReturnType, CalcVolatilityType};
+//! # use frame_support::codec::{Decode, Encode};
+//! # use financial_pallet::Financial;
+//! # use frame_support::dispatch::DispatchError;
+//! # use core::ops::Range;
+//! # use core::time::Duration;
+//! #
+//! # #[derive(Clone, Copy, Debug, Eq, PartialEq, Encode, Decode, Hash, Ord, PartialOrd)]
+//! # pub enum Asset {
+//! #     Btc,
+//! # }
+//! # struct FinancialFuncs;
+//! # impl Financial for FinancialFuncs {
+//! #     type Asset = Asset;
+//! #     type Price = i32;
+//! #     type AccountId = i32;
+//! #     
+//! #     
+//! #    fn calc_return(
+//! #        return_type: CalcReturnType,
+//! #        asset: Self::Asset,
+//! #    ) -> Result<Vec<Self::Price>, DispatchError> {Ok(vec![])}
+//! #    fn calc_vol(
+//! #        return_type: CalcReturnType,
+//! #        volatility_type: CalcVolatilityType,
+//! #        asset: Self::Asset,
+//! #    ) -> Result<Self::Price, DispatchError> {Ok(0)}
+//! #    fn calc_corr(
+//! #        return_type: CalcReturnType,
+//! #        correlation_type: CalcVolatilityType,
+//! #        asset1: Self::Asset,
+//! #        asset2: Self::Asset,
+//! #    ) -> Result<(Self::Price, Range<Duration>), DispatchError> {Ok((0, Duration::new(5, 0)..Duration::new(5, 0)))}
+//! #    fn calc_portf_vol(
+//! #        return_type: CalcReturnType,
+//! #        vol_cor_type: CalcVolatilityType,
+//! #        account_id: Self::AccountId,
+//! #    ) -> Result<Self::Price, DispatchError> {Ok(0)}
+//! #    fn calc_portf_var(
+//! #        return_type: CalcReturnType,
+//! #        vol_cor_type: CalcVolatilityType,
+//! #        account_id: Self::AccountId,
+//! #        z_score: u32,
+//! #    ) -> Result<Self::Price, DispatchError> {Ok(0)}
+//! #    fn calc_rv(
+//! #        return_type: CalcReturnType,
+//! #        ewma_length: u32,
+//! #        asset: Self::Asset,
+//! #    ) -> Result<Self::Price, DispatchError> {Ok(0)}
+//! # }
+//! #
+//! let ret = FinancialFuncs::calc_return(CalcReturnType::Regular, Asset::Btc);
+//! ```
+//!
+//! ## Setup
+//!
+//! Before using Financial Pallet in your code you need to setup it.
+//!
+//! ### Runtime crate
+//!
+//! First of all you need to define some parameters:
+//!
+//! ```
+//! # use frame_support::parameter_types;
+//! # use financial_primitives::{CalcReturnType, CalcVolatilityType};
+//! parameter_types! {
+//!     // Maximum number of points for each asset that Financial Pallet can store
+//!     pub const PriceCount: u32 = 30;
+//!     // Duration of the price period in minutes
+//!     pub const PricePeriod: u32 = 1440;
+//!     // CalcReturnType used by FinancialPallet's calc* extrinsics
+//!     pub const ReturnType: u32 = CalcReturnType::Log.into_u32();
+//!     // CalcVolatilityType used by FinancialPallet's calc* extrinsics
+//!     pub const VolCorType: i64 = CalcVolatilityType::Regular.into_i64();
+//! }
+//! ```
+//!
+//! Implement Financial Pallet for your Runtime:
+//!
+//! ```
+//! # use financial_primitives::{CalcReturnType, CalcVolatilityType};
+//! # use frame_support::codec::{Decode, Encode};
+//! # use frame_support::{impl_outer_origin, parameter_types, weights::Weight};
+//! # use sp_runtime::{ testing::Header, traits::{BlakeTwo256, IdentityLookup}, Perbill};
+//! # use sp_core::H256;
+//! #
+//! # fn main() {}
+//! #
+//! # parameter_types! {
+//! #    // Maximum number of points for each asset that Financial Pallet can store
+//! #    pub const PriceCount: u32 = 30;
+//! #    // Duration of the price period in minutes
+//! #    pub const PricePeriod: u32 = 1440;
+//! #    // CalcReturnType used by FinancialPallet's calc* extrinsics
+//! #    pub const ReturnType: u32 = CalcReturnType::Log.into_u32();
+//! #    // CalcVolatilityType used by FinancialPallet's calc* extrinsics
+//! #    pub const VolCorType: i64 = CalcVolatilityType::Regular.into_i64();
+//! # }
+//! #
+//! # #[derive(Clone, Eq, PartialEq)]
+//! # pub struct Runtime;
+//! # type Event = ();
+//! # pub type FixedNumber = substrate_fixed::types::I64F64;
+//! # pub type Balance = FixedNumber;
+//! # pub type AccountId = u32;
+//! #
+//! # #[derive(Clone, Copy, Debug, Eq, PartialEq, Encode, Decode, Hash, Ord, PartialOrd)]
+//! # pub enum Asset {
+//! #     Btc,
+//! #     Eth,
+//! # }
+//! #
+//! # mod portfolio {
+//! #     use frame_support::dispatch::DispatchError;
+//! #     use financial_primitives::BalanceAware;
+//! #     use crate::{Asset, Balance, AccountId};
+//! #
+//! #     pub struct Module<T> {
+//! #         _marker: sp_std::marker::PhantomData<T>,
+//! #     }
+//! #
+//! #     impl <T> BalanceAware for Module<T> {
+//! #         type AccountId = AccountId;
+//! #         type Asset = Asset;
+//! #         type Balance = Balance;
+//! #
+//! #         fn balances(
+//! #             account_id: &Self::AccountId,
+//! #             assets: &[Self::Asset],
+//! #         ) -> Result<Vec<Self::Balance>, DispatchError> {
+//! #             Ok(vec![])
+//! #         }
+//! #     }
+//! # }
+//! #
+//! # impl_outer_origin! {
+//! #     pub enum Origin for Runtime {}
+//! # }
+//! #
+//! # parameter_types! {
+//! #     pub const BlockHashCount: u64 = 250;
+//! #     pub const MaximumBlockWeight: Weight = 1024;
+//! #     pub const MaximumBlockLength: u32 = 2 * 1024;
+//! #     pub const AvailableBlockRatio: Perbill = Perbill::from_percent(75);
+//! # }
+//! #
+//! # impl frame_system::Trait for Runtime {
+//! #     type BaseCallFilter = ();
+//! #     type Origin = Origin;
+//! #     type Call = ();
+//! #     type Index = u64;
+//! #     type BlockNumber = u64;
+//! #     type Hash = H256;
+//! #     type Hashing = BlakeTwo256;
+//! #     type AccountId = AccountId;
+//! #     type Lookup = IdentityLookup<Self::AccountId>;
+//! #     type Header = Header;
+//! #     type Event = ();
+//! #     type BlockHashCount = BlockHashCount;
+//! #     type MaximumBlockWeight = MaximumBlockWeight;
+//! #     type DbWeight = ();
+//! #     type BlockExecutionWeight = ();
+//! #     type ExtrinsicBaseWeight = ();
+//! #     type MaximumExtrinsicWeight = MaximumBlockWeight;
+//! #     type MaximumBlockLength = MaximumBlockLength;
+//! #     type AvailableBlockRatio = AvailableBlockRatio;
+//! #     type Version = ();
+//! #     type ModuleToIndex = ();
+//! #     type AccountData = ();
+//! #     type OnNewAccount = ();
+//! #     type OnKilledAccount = ();
+//! #     type SystemWeightInfo = ();
+//! # }
+//! #
+//! # mod pallet_timestamp {
+//! #     use core::time::Duration;
+//! #     use frame_support::traits::UnixTime;
+//! #
+//! #     pub struct Module<T> {
+//! #         _marker: sp_std::marker::PhantomData<T>,
+//! #     }
+//! #     impl <T> UnixTime for Module<T> {
+//! #         fn now() -> Duration {
+//! #             Duration::new(5, 0)
+//! #         }
+//! #     }
+//! # }
+//! #
+//! impl financial_pallet::Trait for Runtime {
+//!     type Event = Event;
+//!
+//!     // In most cases you should use pallet_timestamp as a UnixTime trait implementation
+//!     type UnixTime = pallet_timestamp::Module<Runtime>;
+//!
+//!     // Specify parameters here you defined before
+//!     type PriceCount = PriceCount;
+//!     type PricePeriod = PricePeriod;
+//!     type ReturnType = ReturnType;
+//!     type VolCorType = VolCorType;
+//!
+//!     // Construct fixed number type that substrate-fixed crate provides.
+//!     // This type defines valid range of values and precision
+//!     // for all calculations Financial Pallet performs.
+//!     type FixedNumber = substrate_fixed::types::I64F64;
+//!     // FixedNumber underlying type should be defined explicitly because
+//!     // rust compiler could not determine it on its own.
+//!     type FixedNumberBits = i128;
+//!
+//!     // Specify here system wide type used for balance values.
+//!     // You should also provide convertions to and from FixedNumber
+//!     // which is used for all calculations under the hood.
+//!     type Price = Balance;
+//!
+//!     // Asset type specific to your system. It can be as simple as
+//!     // enum. See example below.
+//!     type Asset = Asset;
+//!
+//!     // Provide BalanceAware trait implementation.
+//!     // Financial Pallet uses it to check user balances.
+//!     type Balances = portfolio::Module<Runtime>;
+//! }
+//! ```
+//!
+//! ### Asset Type
+//!
+//! Financial Pallet requires you to define Asset type. This type should be system wide. Oracle
+//! pallet uses it to notify that new price received through `on_price_update` call. The
+//! `BalanceAware` trait which gets information about user balances also uses it.
+//!
+//! The `Asset` type declaration can be as simple as enum with some derived trait implementations:
+//!
+//! ```
+//! # use frame_support::codec::{Decode, Encode};
+//! #[derive(Clone, Copy, Debug, Eq, PartialEq, Encode, Decode, Hash, Ord, PartialOrd)]
+//! pub enum Asset {
+//!     Btc,
+//!     Eth,
+//! }
+//! ```
+//!
+//! But you can define more sophisticated type which values are not predefined and are lied in the
+//! storage.
+//!
+//! Note that `Asset` type must be instance of `Copy` trait, so it's values are supposed to be lightweight.
+//!
+//! ### Genesis Config
 //!
 //! You can provide initial price logs for the assets using [`GenesisConfig`](./struct.GenesisConfig.html).
+//!
+//! ## Assumptions
+//!
+//! - Value of the `PriceCount` parameter can not be greater than 180.
+//! - Value of the `PricePeriod` parameter can not be greater than 10080 (one week).
 
 #![warn(missing_docs)]
 #![cfg_attr(not(feature = "std"), no_std)]
@@ -40,9 +328,10 @@ use frame_support::traits::{Get, UnixTime};
 use frame_support::{decl_error, decl_event, decl_module, decl_storage, dispatch, ensure};
 use frame_system::ensure_signed;
 use math::{
-    calc_return_func, calc_return_iter, covariance, decay, demeaned, exp_corr, from_num,
-    last_recurrent_ewma, log_value_at_risk, mean, mul, regular_corr, regular_value_at_risk,
-    regular_vola, squared, sum, ConstType, MathError, MathResult,
+    calc_log_return, calc_return_exp_vola, calc_return_func, calc_return_iter, covariance, decay,
+    demeaned, exp_corr, exp_vola, from_num, last_price, last_recurrent_ewma, log_value_at_risk,
+    mean, mul, regular_corr, regular_value_at_risk, regular_vola, squared, sum, ConstType,
+    MathError, MathResult,
 };
 use sp_std::cmp::{max, min};
 use sp_std::convert::{TryFrom, TryInto};
@@ -147,6 +436,23 @@ pub struct AssetMetrics<A, P> {
     pub correlations: Vec<(A, P)>,
 }
 
+/// Financial metrics for portfolio
+#[derive(Encode, Decode, Clone, Default, PartialEq, Eq, Debug)]
+pub struct PortfolioMetrics<P> {
+    /// Start of the period inclusive for which metrics were calculated.
+    pub period_start: Duration,
+    /// End of the period exclusive for which metrics were calculated.
+    pub period_end: Duration,
+
+    ///  Number of standard deviations to consider.
+    pub z_score: u32,
+
+    /// Portfolio volatility
+    pub volatility: P,
+    /// Value at Rist for portfolio
+    pub value_at_risk: P,
+}
+
 /// Financial metrics for all assets
 #[derive(Encode, Decode, Clone, Default, PartialEq, Eq, Debug)]
 pub struct FinancialMetrics<A, P> {
@@ -191,12 +497,13 @@ decl_storage! {
     trait Store for Module<T: Trait> as FinancialModule {
         /// Latest price updates on per asset basis.
         pub Updates get(fn updates): map hasher(blake2_128_concat) T::Asset => Option<PriceUpdate<T::FixedNumber>>;
-
         /// Price log on per asset basis.
         pub PriceLogs get(fn price_logs): map hasher(blake2_128_concat) T::Asset => Option<PriceLog<T::FixedNumber>>;
-
         /// Financial metrics on per asset basis.
         pub PerAssetMetrics get(fn per_asset_metrics): map hasher(blake2_128_concat) T::Asset => Option<AssetMetrics<T::Asset, T::Price>>;
+
+        /// Financial metrics on per portfolio basis.
+        pub PerPortfolioMetrics get(fn per_portfolio_metrics): map hasher(blake2_128_concat) T::AccountId => Option<PortfolioMetrics<T::Price>>;
 
         /// Financial metrics for all known assets.
         pub Metrics get(fn metrics): Option<FinancialMetrics<T::Asset, T::Price>>;
@@ -241,11 +548,14 @@ decl_event!(
     pub enum Event<T>
     where
         Asset = <T as Trait>::Asset,
+        AccountId = <T as frame_system::Trait>::AccountId,
     {
         /// Financial metrics for the specified asset have been recalculeted
-        Recalculated(Asset),
+        AssetMetricsRecalculated(Asset),
         /// Financial metrics for all assets have been recalculeted
         MetricsRecalculated(),
+        /// Financial metrics for the specified portfolio have been recalculeted
+        PortfolioMetricsRecalculated(AccountId),
     }
 );
 
@@ -349,7 +659,69 @@ decl_module! {
                 }
             );
 
-            Self::deposit_event(RawEvent::Recalculated(asset));
+            Self::deposit_event(RawEvent::AssetMetricsRecalculated(asset));
+
+            Ok(())
+        }
+
+        /// Recalculates financial metrics for a given portfolio
+        #[weight = 10_000 + T::DbWeight::get().writes(1)]
+        pub fn recalc_portfolio(origin, account_id: T::AccountId, z_score: u32) -> dispatch::DispatchResult {
+            ensure_signed(origin)?;
+
+            let return_type = CalcReturnType::try_from(T::ReturnType::get()).map_err(|_| Error::<T>::InvalidConstant)?;
+            let vol_cor_type = CalcVolatilityType::try_from(T::VolCorType::get()).map_err(|_| Error::<T>::InvalidConstant)?;
+
+            let price_period = PricePeriod(T::PricePeriod::get());
+
+            let mut asset_logs: Vec<_> = PriceLogs::<T>::iter().collect();
+            ensure!(asset_logs.len() > 0, Error::<T>::NotEnoughPoints);
+            asset_logs.sort_by(|(a1, _), (a2, _)| a1.cmp(a2));
+
+            let metrics = financial_metrics::<T::Asset, T::FixedNumber, T::FixedNumber>(
+                return_type,
+                vol_cor_type,
+                &price_period,
+                &asset_logs,
+            )
+            .map_err(Into::<Error<T>>::into)?;
+
+            let prices = latest_prices::<T::Asset, T::FixedNumber>(&asset_logs)
+                .collect::<MathResult<Vec<_>>>()
+                .map_err(Into::<Error<T>>::into)?;
+
+            let balances = T::Balances::balances(&account_id, &metrics.assets)?
+                .into_iter()
+                .map(|x| x.into())
+                .collect::<Vec<_>>();
+
+            let ws = weights(&balances, &prices).map_err(Into::<Error<T>>::into)?;
+
+            let volatility = portfolio_vol(&ws, &metrics.covariances).map_err(Into::<Error<T>>::into)?;
+            let total_weighted_mean_return = sum(mul(ws.into_iter(), metrics.mean_returns.into_iter()))
+                .map_err(Into::<Error<T>>::into)?;
+
+            let value_at_risk = match return_type {
+                CalcReturnType::Regular => {
+                    regular_value_at_risk(z_score, volatility, total_weighted_mean_return)
+                        .map_err(Into::<Error<T>>::into)?
+                }
+                CalcReturnType::Log => {
+                    log_value_at_risk(z_score, volatility, total_weighted_mean_return)
+                        .map_err(Into::<Error<T>>::into)?
+                }
+            };
+
+            PerPortfolioMetrics::<T>::insert(&account_id, PortfolioMetrics {
+                    period_start: metrics.period_start,
+                    period_end: metrics.period_end,
+                    z_score,
+                    volatility: volatility.into(),
+                    value_at_risk: value_at_risk.into(),
+                }
+            );
+
+            Self::deposit_event(RawEvent::PortfolioMetricsRecalculated(account_id));
 
             Ok(())
         }
@@ -655,6 +1027,12 @@ pub trait Financial {
         account_id: Self::AccountId,
         z_score: u32,
     ) -> Result<Self::Price, DispatchError>;
+    /// Calculates rv.
+    fn calc_rv(
+        return_type: CalcReturnType,
+        ewma_length: u32,
+        asset: Self::Asset,
+    ) -> Result<Self::Price, DispatchError>;
 }
 
 #[derive(Debug)]
@@ -731,6 +1109,49 @@ where
                 })
             }
         }
+    }
+}
+
+struct Rv;
+
+impl Rv {
+    fn exp_vol<F, I>(
+        returns: I,
+        decay: F,
+        last_price: F,
+        return_type: CalcReturnType,
+    ) -> MathResult<F>
+    where
+        F: FixedSigned + PartialOrd<ConstType> + From<ConstType>,
+        F::Bits: Copy + ToFixed + AddAssign + BitOrAssign + ShlAssign,
+        I: Iterator<Item = MathResult<F>>,
+    {
+        let squared_returns = squared(returns);
+        let var = last_recurrent_ewma(squared_returns, decay)?;
+        let vol = exp_vola(return_type, var, last_price)?;
+
+        Ok(vol)
+    }
+
+    pub fn regular<F>(prices: &[F], ewma_length: u32) -> MathResult<F>
+    where
+        F: FixedSigned + PartialOrd<ConstType> + From<ConstType>,
+        F::Bits: Copy + ToFixed + AddAssign + BitOrAssign + ShlAssign,
+    {
+        let returns = calc_return_iter(prices, calc_return_exp_vola);
+        let decay = decay(ewma_length)?;
+        let last_price = last_price(prices)?;
+
+        Self::exp_vol(returns, decay, last_price, CalcReturnType::Regular)
+    }
+
+    pub fn log<F, I>(last_price: F, log_returns: I, decay: F) -> MathResult<F>
+    where
+        F: FixedSigned + PartialOrd<ConstType> + From<ConstType>,
+        F::Bits: Copy + ToFixed + AddAssign + BitOrAssign + ShlAssign,
+        I: Iterator<Item = MathResult<F>>,
+    {
+        Self::exp_vol(log_returns, decay, last_price, CalcReturnType::Log)
     }
 }
 
@@ -1188,6 +1609,30 @@ impl<T: Trait> Financial for Module<T> {
                 let portf_var = log_value_at_risk(z_score, vol, total_weighted_mean_return)
                     .map_err(Into::<Error<T>>::into)?;
                 Ok(portf_var.into())
+            }
+        }
+    }
+
+    fn calc_rv(
+        return_type: CalcReturnType,
+        ewma_length: u32,
+        asset: T::Asset,
+    ) -> Result<Self::Price, DispatchError> {
+        let log = PriceLogs::<T>::get(asset).ok_or(Error::<T>::NotEnoughPoints)?;
+        let prices: Vec<_> = log.prices.iter().copied().collect();
+
+        match return_type {
+            CalcReturnType::Regular => Ok(Rv::regular(&prices, ewma_length)
+                .map_err(Into::<Error<T>>::into)?
+                .into()),
+            CalcReturnType::Log => {
+                let last_price = last_price(&prices).map_err(Into::<Error<T>>::into)?;
+                let log_returns = calc_return_iter(&prices, calc_log_return);
+                let decay = decay(ewma_length).map_err(Into::<Error<T>>::into)?;
+
+                Ok(Rv::log(last_price, log_returns, decay)
+                    .map_err(Into::<Error<T>>::into)?
+                    .into())
             }
         }
     }

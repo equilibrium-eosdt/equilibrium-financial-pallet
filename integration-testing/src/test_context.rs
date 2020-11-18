@@ -172,6 +172,7 @@ impl TestContext {
             let metrics = client.per_asset_metrics(*asset, Option::None).await;
             data.per_asset_metrics.insert(*asset, metrics.unwrap());
         }
+
         data.now = client.now(Option::None).await.unwrap();
 
         Ok(data)

@@ -129,6 +129,7 @@ pub enum Asset {
     Eos,
     Eq,
     Eth,
+    Dot,
 }
 
 pub struct Balances;
@@ -182,6 +183,36 @@ pub fn initial_eq_prices() -> Vec<FixedNumber> {
     ]
 }
 
+pub fn alternative_eq_prices() -> Vec<FixedNumber> {
+    vec![
+        FixedNumber::from_num(1),
+        FixedNumber::max_value(),
+        FixedNumber::from_num(1),
+        FixedNumber::max_value(),
+        FixedNumber::from_num(1),
+        FixedNumber::max_value(),
+        FixedNumber::from_num(1),
+        FixedNumber::max_value(),
+        FixedNumber::from_num(1),
+        FixedNumber::max_value(),
+    ]
+}
+
+pub fn alternative_dot_prices() -> Vec<FixedNumber> {
+    vec![
+        FixedNumber::max_value(),
+        FixedNumber::min_value(),
+        FixedNumber::min_value(),
+        FixedNumber::min_value(),
+        FixedNumber::min_value(),
+        FixedNumber::min_value(),
+        FixedNumber::min_value(),
+        FixedNumber::min_value(),
+        FixedNumber::min_value(),
+        FixedNumber::min_value(),
+    ]
+}
+
 pub fn initial_eth_prices() -> Vec<f64> {
     vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 }
@@ -229,6 +260,55 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
             (
                 Asset::Eth,
                 initial_eth_prices()
+                    .into_iter()
+                    .map(FixedNumber::from_num)
+                    .collect(),
+                prev_period_now,
+            ),
+        ],
+    }
+    .assimilate_storage(&mut t)
+    .unwrap();
+
+    t.into()
+}
+
+pub fn alternative_test_ext() -> sp_io::TestExternalities {
+    let mut t = system::GenesisConfig::default()
+        .build_storage::<Test>()
+        .unwrap();
+
+    let prev_period_now = create_duration(2020, 9, 14, 11, 25, 0);
+    crate::GenesisConfig::<Test> {
+        prices: vec![
+            (
+                Asset::Btc,
+                initial_btc_prices()
+                    .into_iter()
+                    .map(FixedNumber::from_num)
+                    .collect(),
+                prev_period_now,
+            ),
+            (
+                Asset::Eos,
+                initial_eos_prices()
+                    .into_iter()
+                    .map(FixedNumber::from_num)
+                    .collect(),
+                prev_period_now,
+            ),
+            (Asset::Eq, alternative_eq_prices(), prev_period_now),
+            (
+                Asset::Eth,
+                initial_eth_prices()
+                    .into_iter()
+                    .map(FixedNumber::from_num)
+                    .collect(),
+                prev_period_now,
+            ),
+            (
+                Asset::Dot,
+                alternative_dot_prices()
                     .into_iter()
                     .map(FixedNumber::from_num)
                     .collect(),

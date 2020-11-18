@@ -1,14 +1,12 @@
 # Financial Pallet
 
-_This project is currently under active development._
-
 ## Overview
 
 Equilibrium's financial pallet is an open-source substrate module that subscribes to external price feed/oracle, gathers asset prices and calculates financial metrics based on the information collected.  
 
 ## Documentation
 
-For the detailed documentation please refer to [docs/FINANCIAL.md](docs/FINANCIAL.md).
+For the detailed documentation please refer to rustdocs.
 
 ## Installation
 
@@ -45,7 +43,7 @@ To run integration tests you need purge and run node first (see the next section
 Then type:
 
 ```bash
-cargo run -p integration-testing
+cargo run -p integration-tests
 ```
 
 Note that integration tests take several minutes to complete.

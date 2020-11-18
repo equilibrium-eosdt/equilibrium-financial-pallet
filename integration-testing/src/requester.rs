@@ -157,7 +157,7 @@ macro_rules! join_chain_calls {
     ( $($tokens:tt)* ) => {{
         let join_result = try_join!($($tokens)*)?;
 
-        let vec_vec = tuple_to_vec!(join_result, $($tokens)*);
+        let vec_vec = integration_testing_macro::tuple_to_vec!(join_result, $($tokens)*);
 
         let flatten: Vec<_> = vec_vec.into_iter().flatten().collect();
 

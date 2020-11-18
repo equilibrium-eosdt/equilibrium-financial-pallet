@@ -5,6 +5,7 @@ pub mod key;
 pub mod keyring;
 pub mod manual_timestamp;
 pub mod oracle;
+pub mod portfolio;
 pub mod requester;
 pub mod runtime;
 pub mod test;
@@ -30,6 +31,7 @@ use substrate_subxt::ClientBuilder;
 #[allow(unused_imports)]
 use test_scripts::test_financial::test_financial;
 use test_scripts::test_oracle::test_oracle;
+use test_scripts::test_recalc_asset::test_recalc_asset;
 
 pub const ONE: u64 = 1_000_000_000;
 
@@ -106,6 +108,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         println!("\n\nRunning financial test \n\n");
         test_financial(&client, nonces.clone()).await?;
+    }
+
+    if config
+        .tests_to_launch
+        .contains(&"test_recalc_asset".to_string())
+    {
+        println!("\n\nRunning recalc asset test \n\n");
+        test_recalc_asset(&client, nonces.clone()).await?;
     }
 
     if config.tests_to_launch.contains(&"test_oracle".to_string()) {

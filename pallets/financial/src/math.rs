@@ -16,7 +16,8 @@
 use core::ops::{AddAssign, BitOrAssign, ShlAssign};
 use financial_primitives::CalcReturnType;
 use substrate_fixed::traits::{Fixed, FixedSigned, ToFixed};
-use substrate_fixed::transcendental::{exp, ln};
+use substrate_fixed::transcendental;
+use substrate_fixed::transcendental::{exp, sqrt};
 use substrate_fixed::types::I9F23;
 
 // Type of constants for transcendental operations declared in substrate_fixed crate
@@ -51,6 +52,30 @@ pub enum CalcCorrelationType {
     Exponential(u32),
 }
 
+pub fn ln<S, D>(operand: S) -> MathResult<D>
+where
+    S: FixedSigned + PartialOrd<ConstType>,
+    D: FixedSigned + PartialOrd<ConstType> + From<S> + From<ConstType>,
+    D::Bits: Copy + ToFixed + AddAssign + BitOrAssign + ShlAssign,
+{
+    let operand = D::from(operand);
+    // This check is slightly modified check from the substrate-fixed code.
+    // We can not rely on check from substrate-fixed because it uses unwrap call
+    // underneath for some reason.
+    // Here we carefully doing it early, calculate inverse if needed.
+    // So code path with unwrap in substrate-fixed is never called.
+    if operand < D::from_num(1) {
+        let inverse = D::from_num(1)
+            .checked_div(operand)
+            .ok_or(MathError::DivisionByZero)?;
+        transcendental::ln::<D, D>(inverse)
+            .map_err(|_| MathError::Transcendental)
+            .map(|x| -x)
+    } else {
+        transcendental::ln::<D, D>(operand).map_err(|_| MathError::Transcendental)
+    }
+}
+
 pub fn calc_return<F: Fixed>(x1: F, x2: F) -> Result<F, MathError> {
     let ratio = x2.checked_div(x1).ok_or(MathError::DivisionByZero)?;
 
@@ -63,7 +88,11 @@ where
     F::Bits: Copy + ToFixed + AddAssign + BitOrAssign + ShlAssign,
 {
     let ratio = x2.checked_div(x1).ok_or(MathError::DivisionByZero)?;
-    ln(ratio).map_err(|_| MathError::Transcendental)
+    ln(ratio)
+}
+
+pub fn calc_return_exp_vola<F: Fixed>(x1: F, x2: F) -> Result<F, MathError> {
+    x2.checked_sub(x1).ok_or(MathError::Overflow)
 }
 
 pub fn calc_return_func<F>(return_type: CalcReturnType) -> impl Fn(F, F) -> MathResult<F> + Copy
@@ -164,6 +193,17 @@ pub fn regular_vola<F: Fixed>(n: usize, sum: F) -> MathResult<F> {
     Ok(c)
 }
 
+pub fn exp_vola<F>(return_type: CalcReturnType, var: F, price: F) -> MathResult<F>
+where
+    F: Fixed + PartialOrd<ConstType>,
+{
+    let a: F = sqrt(var).map_err(|_| MathError::Transcendental)?;
+    match return_type {
+        CalcReturnType::Regular => a.checked_div(price).ok_or(MathError::DivisionByZero),
+        CalcReturnType::Log => Ok(a),
+    }
+}
+
 pub fn mul<'a, F, I1, I2>(iter1: I1, iter2: I2) -> impl Iterator<Item = MathResult<F>> + 'a
 where
     F: 'a + Fixed,
@@ -250,6 +290,13 @@ where
     let c = exp::<F, F>(b).map_err(|_| MathError::Transcendental)?;
 
     F::from_num(1).checked_sub(c).ok_or(MathError::Overflow)
+}
+
+pub fn last_price<T>(prices: &[T]) -> MathResult<T>
+where
+    T: Copy,
+{
+    prices.last().copied().ok_or(MathError::NotEnoughPoints)
 }
 
 #[cfg(test)]
@@ -373,6 +420,19 @@ mod tests {
         assert_ok!(&actual);
         let actual: f64 = actual.unwrap().lossy_into();
         let expected = 93177.2077918920;
+
+        assert_abs_diff_eq!(actual, expected, epsilon = 1e-8);
+    }
+
+    #[test]
+    fn exp_vola_expample() {
+        let variance = FixedNumber::from_num(114954.3177623650);
+        let price = FixedNumber::from_num(9_081.76);
+        let actual = exp_vola(CalcReturnType::Regular, variance, price);
+        assert_ok!(actual);
+        let actual: FixedNumber = actual.unwrap();
+        let actual: f64 = actual.lossy_into();
+        let expected = 0.0373329770530381;
 
         assert_abs_diff_eq!(actual, expected, epsilon = 1e-8);
     }

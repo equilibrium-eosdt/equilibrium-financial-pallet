@@ -1,15 +1,18 @@
-use crate::financial::{MetricsStoreExt, RecalcCall, UpdatesStoreExt};
+use crate::financial::{
+    MetricsStoreExt, PerPortfolioMetricsStoreExt, RecalcCall, RecalcPortfolioCall, UpdatesStoreExt,
+};
 use crate::key::{AccountKey, DevNonces};
+use crate::keyring::PubKey;
 use crate::manual_timestamp::{AdvanceSecsCall, NowStoreExt};
 use crate::oracle::{PricePointsStoreExt, SetPriceCall};
-use crate::runtime::FixedNumber;
+use crate::portfolio::{BalancesStoreExt, SetBalanceCall};
+use crate::runtime::{AccountId, FixedNumber};
 use crate::test::init_nonce;
 use crate::{join_chain_calls, requester::call_chain, TestRuntime};
 use approx::assert_abs_diff_eq;
 use common::Asset;
 use core::time::Duration;
 use futures::{lock::Mutex, try_join};
-use integration_testing_macro::tuple_to_vec;
 use itertools::izip;
 use pallet_financial::FinancialMetrics;
 use sp_keyring::AccountKeyring;
@@ -25,10 +28,36 @@ pub async fn test_financial(
     let alice_key = AccountKey::from(AccountKeyring::Alice);
     init_nonce(client, nonces.clone(), alice_key).await?;
     let secs_to_move = 86400;
+    let random_acc = AccountKey::generate_random();
+    init_nonce(client, nonces.clone(), random_acc).await?;
+    let random_id = random_acc.acc_id();
 
     // ------------------------------------ Setting prices ------------------------------------
 
     set_prices_and_move_time(client, alice_key, nonces.clone(), secs_to_move).await?;
+
+    // ----------------------------------- Setting balances -----------------------------------
+
+    set_balances(client, alice_key, nonces.clone(), random_id.clone()).await?;
+
+    // ----------------------------------- Recalc portfolio -----------------------------------
+
+    let z_score = 5;
+    println!("Recalc financial portfolio");
+    call_chain(
+        client,
+        nonces.clone(),
+        alice_key,
+        RecalcPortfolioCall {
+            account_id: random_id.clone(),
+            z_score,
+        },
+    )
+    .await?;
+
+    // ---------------------------------- Assert chain state ----------------------------------
+
+    assert_first_recalc_portfolio_chain_state(client, random_id.clone(), z_score).await?;
 
     // ------------------------------- Recalc financial pallet -------------------------------
 
@@ -50,6 +79,28 @@ pub async fn test_financial(
     // -------------------- Setting prices 1 day after month prices setted --------------------
 
     set_prices_after_month(client, alice_key, nonces.clone(), secs_to_move).await?;
+
+    // ----------------------------------- Setting balances -----------------------------------
+
+    increase_balances(client, alice_key, nonces.clone(), random_id.clone()).await?;
+
+    // ----------------------------------- Recalc portfolio -----------------------------------
+
+    println!("Recalc financial portfolio");
+    call_chain(
+        client,
+        nonces.clone(),
+        alice_key,
+        RecalcPortfolioCall {
+            account_id: random_id.clone(),
+            z_score,
+        },
+    )
+    .await?;
+
+    // ---------------------------------- Assert chain state ----------------------------------
+
+    assert_second_recalc_portfolio_chain_state(client, random_id, z_score).await?;
 
     // ------------------------------- Recalc financial pallet -------------------------------
 
@@ -75,6 +126,18 @@ pub async fn test_financial(
     Ok(())
 }
 
+fn assert_fixed_with_epsilon(
+    step_name: &str,
+    actual_fixed: FixedNumber,
+    expected_fixed: FixedNumber,
+) {
+    println!("Assert fixed number with epsilon. {}", step_name);
+    let actual: f64 = actual_fixed.lossy_into();
+    let expected: f64 = expected_fixed.lossy_into();
+
+    assert_abs_diff_eq!(actual, expected, epsilon = 1e-8);
+}
+
 fn assert_vectors_with_epsilon(
     step_name: &str,
     actual_vec: Vec<FixedNumber>,
@@ -95,6 +158,60 @@ fn assert_metrics_assets(metrics: &FinancialMetrics<Asset, FixedNumber>) {
     }
 }
 
+async fn assert_second_recalc_portfolio_chain_state(
+    client: &Client<TestRuntime>,
+    account: AccountId,
+    z_score: u32,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let portfolio = client
+        .per_portfolio_metrics(account, Option::None)
+        .await?
+        .unwrap();
+
+    let expected_volatility = FixedNumber::from_num(0.01811195784505);
+    let expected_value_at_risk = FixedNumber::from_num(0.07939414274541);
+    assert!(portfolio.z_score == FixedNumber::from_num(z_score));
+    assert_fixed_with_epsilon(
+        "Assert portfolio volatility",
+        portfolio.volatility,
+        expected_volatility,
+    );
+    assert_fixed_with_epsilon(
+        "Assert portfolio value at risk",
+        portfolio.value_at_risk,
+        expected_value_at_risk,
+    );
+
+    Ok(())
+}
+
+async fn assert_first_recalc_portfolio_chain_state(
+    client: &Client<TestRuntime>,
+    account: AccountId,
+    z_score: u32,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let portfolio = client
+        .per_portfolio_metrics(account, Option::None)
+        .await?
+        .unwrap();
+
+    let expected_volatility = FixedNumber::from_num(0.01722994900407);
+    let expected_value_at_risk = FixedNumber::from_num(0.07627223471300);
+    assert!(portfolio.z_score == FixedNumber::from_num(z_score));
+    assert_fixed_with_epsilon(
+        "Assert portfolio volatility",
+        portfolio.volatility,
+        expected_volatility,
+    );
+    assert_fixed_with_epsilon(
+        "Assert portfolio value at risk",
+        portfolio.value_at_risk,
+        expected_value_at_risk,
+    );
+
+    Ok(())
+}
+
 async fn assert_second_recalc_chain_state(
     client: &Client<TestRuntime>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -102,19 +219,23 @@ async fn assert_second_recalc_chain_state(
 
     assert_metrics_assets(&metrics);
 
+    let expected_mean_returns: Vec<FixedNumber> = vec![
+        FixedNumber::from_num(0),                  // usd
+        FixedNumber::from_num(-0.001153039194123), // eq
+        FixedNumber::from_num(0.003201739050464),  // eth
+        FixedNumber::from_num(0.00902369253973),   // btc
+        FixedNumber::from_num(-0.002268215540209), // eos
+        FixedNumber::from_num(-0.001153039194123), // dot
+    ];
+
     let expected_volatilities: Vec<FixedNumber> = vec![
         FixedNumber::from_num(0.0),               // usd
         FixedNumber::from_num(0.041212132650566), // eq
         FixedNumber::from_num(0.026979767511806), // eth
         FixedNumber::from_num(0.019530767671752), // btc
         FixedNumber::from_num(0.022172261805909), // eos
+        FixedNumber::from_num(0.041212132650566), // dot
     ];
-
-    assert_vectors_with_epsilon(
-        "Assert assets volatilities",
-        metrics.volatilities,
-        expected_volatilities,
-    );
 
     let expected_correlations: Vec<FixedNumber> = vec![
         FixedNumber::from_num(1),
@@ -123,24 +244,35 @@ async fn assert_second_recalc_chain_state(
         FixedNumber::from_num(0),
         FixedNumber::from_num(0),
         FixedNumber::from_num(0),
+        FixedNumber::from_num(0),
         FixedNumber::from_num(1),
         FixedNumber::from_num(0.58314744717848),
         FixedNumber::from_num(0.5055289438838),
         FixedNumber::from_num(-0.14858602369776),
+        FixedNumber::from_num(1),
         FixedNumber::from_num(0),
         FixedNumber::from_num(0.58314744717848),
         FixedNumber::from_num(1),
         FixedNumber::from_num(0.72688913085808),
         FixedNumber::from_num(0.33944301098853),
+        FixedNumber::from_num(0.58314744717848),
         FixedNumber::from_num(0),
         FixedNumber::from_num(0.5055289438838),
         FixedNumber::from_num(0.72688913085808),
         FixedNumber::from_num(1),
         FixedNumber::from_num(0.18143650586153),
+        FixedNumber::from_num(0.5055289438838),
         FixedNumber::from_num(0),
         FixedNumber::from_num(-0.14858602369776),
         FixedNumber::from_num(0.33944301098853),
         FixedNumber::from_num(0.18143650586153),
+        FixedNumber::from_num(1),
+        FixedNumber::from_num(-0.14858602369776),
+        FixedNumber::from_num(0),
+        FixedNumber::from_num(1),
+        FixedNumber::from_num(0.58314744717848),
+        FixedNumber::from_num(0.50552894388380),
+        FixedNumber::from_num(-0.14858602369776),
         FixedNumber::from_num(1),
     ];
 
@@ -151,29 +283,54 @@ async fn assert_second_recalc_chain_state(
         FixedNumber::from_num(0),
         FixedNumber::from_num(0),
         FixedNumber::from_num(0),
+        FixedNumber::from_num(0),
         FixedNumber::from_num(0.001698439877608),
         FixedNumber::from_num(0.00064839800627),
         FixedNumber::from_num(0.00040690256633),
         FixedNumber::from_num(-0.00013577288546),
+        FixedNumber::from_num(0.00169843987761),
         FixedNumber::from_num(0),
         FixedNumber::from_num(0.00064839800627),
         FixedNumber::from_num(0.000727907854991),
         FixedNumber::from_num(0.0003830237393),
         FixedNumber::from_num(0.00020305564717),
+        FixedNumber::from_num(0.00064839800627),
         FixedNumber::from_num(0),
         FixedNumber::from_num(0.00040690256633),
         FixedNumber::from_num(0.0003830237393),
         FixedNumber::from_num(0.000381450885848),
         FixedNumber::from_num(0.00007856949929),
+        FixedNumber::from_num(0.00040690256633),
         FixedNumber::from_num(0),
         FixedNumber::from_num(-0.00013577288546),
         FixedNumber::from_num(0.00020305564717),
         FixedNumber::from_num(0.00007856949929),
         FixedNumber::from_num(0.00049160919359),
+        FixedNumber::from_num(-0.00013577288546),
+        FixedNumber::from_num(0),
+        FixedNumber::from_num(0.00169843987761),
+        FixedNumber::from_num(0.00064839800627),
+        FixedNumber::from_num(0.00040690256633),
+        FixedNumber::from_num(-0.00013577288546),
+        FixedNumber::from_num(0.001698439877608),
     ];
 
+    let actual_mean_returns: Vec<FixedNumber> = metrics.mean_returns;
+    let actual_volatilities: Vec<FixedNumber> = metrics.volatilities;
     let actual_correlations: Vec<FixedNumber> = metrics.correlations;
     let actual_covariances: Vec<FixedNumber> = metrics.covariances;
+
+    assert_vectors_with_epsilon(
+        "Assert all assets mean returns",
+        actual_mean_returns,
+        expected_mean_returns,
+    );
+
+    assert_vectors_with_epsilon(
+        "Assert assets volatilities",
+        actual_volatilities,
+        expected_volatilities,
+    );
 
     assert_vectors_with_epsilon(
         "Assert correlations matrix",
@@ -186,27 +343,6 @@ async fn assert_second_recalc_chain_state(
         actual_covariances,
         expected_covariances,
     );
-
-    // let actual_btc_metrics = client
-    //     .per_asset_metrics(Asset::Btc, Option::None)
-    //     .await?
-    //     .unwrap();
-    // let actual_eos_metrics = client
-    //     .per_asset_metrics(Asset::Eos, Option::None)
-    //     .await?
-    //     .unwrap();
-    // let actual_eth_metrics = client
-    //     .per_asset_metrics(Asset::Eth, Option::None)
-    //     .await?
-    //     .unwrap();
-    // let actual_eq_metrics = client
-    //     .per_asset_metrics(Asset::Eq, Option::None)
-    //     .await?
-    //     .unwrap();
-    // let actual_usd_metrics = client
-    //     .per_asset_metrics(Asset::Usd, Option::None)
-    //     .await?
-    //     .unwrap();
 
     // let expected_btc_log_return = vec![
     //     FixedNumber::from_num(-0.017851775539992),
@@ -404,19 +540,23 @@ async fn assert_first_recalc_chain_state(
 
     assert_metrics_assets(&metrics);
 
-    let expected_volatilities: Vec<FixedNumber> = vec![
-        FixedNumber::from_num(0.0),              // usd
-        FixedNumber::from_num(0.04121390630829), // eq
-        FixedNumber::from_num(0.02692861833717), // eth
-        FixedNumber::from_num(0.01899396779000), // btc
-        FixedNumber::from_num(0.02163976358360), // eos
+    let expected_mean_returns: Vec<FixedNumber> = vec![
+        FixedNumber::from_num(0),                  // usd
+        FixedNumber::from_num(-0.001200324298823), // eq
+        FixedNumber::from_num(0.002905647626926),  // eth
+        FixedNumber::from_num(0.008273687295067),  // btc
+        FixedNumber::from_num(-0.001169491063308), // eos
+        FixedNumber::from_num(-0.001200324298823), // dot
     ];
 
-    assert_vectors_with_epsilon(
-        "Assert assets volatilities",
-        metrics.volatilities,
-        expected_volatilities,
-    );
+    let expected_volatilities: Vec<FixedNumber> = vec![
+        FixedNumber::from_num(0.0),               // usd
+        FixedNumber::from_num(0.04121390630829),  // eq
+        FixedNumber::from_num(0.02692861833717),  // eth
+        FixedNumber::from_num(0.01899396779000),  // btc
+        FixedNumber::from_num(0.02163976358360),  // eos
+        FixedNumber::from_num(0.041213906308286), // dot
+    ];
 
     let expected_correlations: Vec<FixedNumber> = vec![
         FixedNumber::from_num(1),
@@ -425,24 +565,35 @@ async fn assert_first_recalc_chain_state(
         FixedNumber::from_num(0),
         FixedNumber::from_num(0),
         FixedNumber::from_num(0),
+        FixedNumber::from_num(0),
         FixedNumber::from_num(1),
         FixedNumber::from_num(0.58444399870037),
         FixedNumber::from_num(0.52044196493031),
         FixedNumber::from_num(-0.15357736293063),
+        FixedNumber::from_num(1),
         FixedNumber::from_num(0),
         FixedNumber::from_num(0.58444399870037),
         FixedNumber::from_num(1),
         FixedNumber::from_num(0.73404325427508),
         FixedNumber::from_num(0.36263027397808),
+        FixedNumber::from_num(0.58444399870037),
         FixedNumber::from_num(0),
         FixedNumber::from_num(0.52044196493031),
         FixedNumber::from_num(0.73404325427508),
         FixedNumber::from_num(1),
         FixedNumber::from_num(0.24738115822628),
+        FixedNumber::from_num(0.52044196493031),
         FixedNumber::from_num(0),
         FixedNumber::from_num(-0.15357736293063),
         FixedNumber::from_num(0.36263027397808),
         FixedNumber::from_num(0.24738115822628),
+        FixedNumber::from_num(1),
+        FixedNumber::from_num(-0.15357736293063),
+        FixedNumber::from_num(0),
+        FixedNumber::from_num(1),
+        FixedNumber::from_num(0.58444399870037),
+        FixedNumber::from_num(0.52044196493031),
+        FixedNumber::from_num(-0.15357736293063),
         FixedNumber::from_num(1),
     ];
 
@@ -453,29 +604,54 @@ async fn assert_first_recalc_chain_state(
         FixedNumber::from_num(0),
         FixedNumber::from_num(0),
         FixedNumber::from_num(0),
+        FixedNumber::from_num(0),
         FixedNumber::from_num(0.001698586073),
         FixedNumber::from_num(0.0006486355597),
         FixedNumber::from_num(0.00040741009369),
         FixedNumber::from_num(-0.00013696938233),
+        FixedNumber::from_num(0.00169858607319),
         FixedNumber::from_num(0),
         FixedNumber::from_num(0.0006486355597),
         FixedNumber::from_num(0.0007251504855),
         FixedNumber::from_num(0.0003754494048),
         FixedNumber::from_num(0.00021131515315),
+        FixedNumber::from_num(0.0006486355597),
         FixedNumber::from_num(0),
         FixedNumber::from_num(0.00040741009369),
         FixedNumber::from_num(0.0003754494048),
         FixedNumber::from_num(0.00036077081241),
         FixedNumber::from_num(0.00010167983375),
+        FixedNumber::from_num(0.00040741009369),
         FixedNumber::from_num(0),
         FixedNumber::from_num(-0.00013696938233),
         FixedNumber::from_num(0.00021131515315),
         FixedNumber::from_num(0.00010167983375),
         FixedNumber::from_num(0.000468279368),
+        FixedNumber::from_num(-0.00013696938233),
+        FixedNumber::from_num(0),
+        FixedNumber::from_num(0.00169858607319),
+        FixedNumber::from_num(0.0006486355597),
+        FixedNumber::from_num(0.00040741009369),
+        FixedNumber::from_num(-0.00013696938233),
+        FixedNumber::from_num(0.001698586073188),
     ];
 
+    let actual_mean_returns: Vec<FixedNumber> = metrics.mean_returns;
+    let actual_volatilities: Vec<FixedNumber> = metrics.volatilities;
     let actual_correlations: Vec<FixedNumber> = metrics.correlations;
     let actual_covariances: Vec<FixedNumber> = metrics.covariances;
+
+    assert_vectors_with_epsilon(
+        "Assert all assets mean returns",
+        actual_mean_returns,
+        expected_mean_returns,
+    );
+
+    assert_vectors_with_epsilon(
+        "Assert assets volatilities",
+        actual_volatilities,
+        expected_volatilities,
+    );
 
     assert_vectors_with_epsilon(
         "Assert correlations matrix",
@@ -699,6 +875,220 @@ async fn assert_first_recalc_chain_state(
     Ok(())
 }
 
+async fn increase_balances(
+    client: &Client<TestRuntime>,
+    alice_key: AccountKey,
+    nonces: Arc<Mutex<DevNonces>>,
+    account: AccountId,
+) -> Result<(), Box<dyn std::error::Error>> {
+    println!("Increasing assets balances for account {:?}", account);
+
+    let usd_balance: FixedNumber = FixedNumber::from_num(40);
+    let eq_balance: FixedNumber = FixedNumber::from_num(10);
+    let eth_balance: FixedNumber = FixedNumber::from_num(5);
+    let btc_balance: FixedNumber = FixedNumber::from_num(15);
+    let eos_balance: FixedNumber = FixedNumber::from_num(10000);
+    let dot_balance: FixedNumber = FixedNumber::from_num(30);
+
+    join_chain_calls!(
+        call_chain(
+            client,
+            nonces.clone(),
+            alice_key,
+            SetBalanceCall {
+                asset: Asset::Usd,
+                account_id: account.clone(),
+                balance: usd_balance,
+            },
+        ),
+        call_chain(
+            client,
+            nonces.clone(),
+            alice_key,
+            SetBalanceCall {
+                asset: Asset::Eq,
+                account_id: account.clone(),
+                balance: eq_balance,
+            },
+        ),
+        call_chain(
+            client,
+            nonces.clone(),
+            alice_key,
+            SetBalanceCall {
+                asset: Asset::Eth,
+                account_id: account.clone(),
+                balance: eth_balance,
+            },
+        ),
+        call_chain(
+            client,
+            nonces.clone(),
+            alice_key,
+            SetBalanceCall {
+                asset: Asset::Btc,
+                account_id: account.clone(),
+                balance: btc_balance,
+            },
+        ),
+        call_chain(
+            client,
+            nonces.clone(),
+            alice_key,
+            SetBalanceCall {
+                asset: Asset::Eos,
+                account_id: account.clone(),
+                balance: eos_balance,
+            },
+        ),
+        call_chain(
+            client,
+            nonces.clone(),
+            alice_key,
+            SetBalanceCall {
+                asset: Asset::Dot,
+                account_id: account.clone(),
+                balance: dot_balance,
+            },
+        ),
+    );
+
+    let actual_btc_balance = client
+        .balances(account.clone(), Asset::Btc, Option::None)
+        .await?;
+    let actual_eos_balance = client
+        .balances(account.clone(), Asset::Eos, Option::None)
+        .await?;
+    let actual_eq_balance = client
+        .balances(account.clone(), Asset::Eq, Option::None)
+        .await?;
+    let actual_eth_balance = client
+        .balances(account.clone(), Asset::Eth, Option::None)
+        .await?;
+    let actual_usd_balance = client
+        .balances(account.clone(), Asset::Usd, Option::None)
+        .await?;
+    let actual_dot_balance = client
+        .balances(account.clone(), Asset::Dot, Option::None)
+        .await?;
+
+    assert!(actual_btc_balance == btc_balance);
+    assert!(actual_eos_balance == eos_balance);
+    assert!(actual_eq_balance == eq_balance);
+    assert!(actual_eth_balance == eth_balance);
+    assert!(actual_usd_balance == usd_balance);
+    assert!(actual_dot_balance == dot_balance);
+
+    Ok(())
+}
+
+async fn set_balances(
+    client: &Client<TestRuntime>,
+    alice_key: AccountKey,
+    nonces: Arc<Mutex<DevNonces>>,
+    account: AccountId,
+) -> Result<(), Box<dyn std::error::Error>> {
+    println!("Setting assets balances for account {:?}", account);
+
+    let usd_balance: FixedNumber = FixedNumber::from_num(30);
+    let eq_balance: FixedNumber = FixedNumber::from_num(5);
+    let eth_balance: FixedNumber = FixedNumber::from_num(2);
+    let btc_balance: FixedNumber = FixedNumber::from_num(10);
+    let eos_balance: FixedNumber = FixedNumber::from_num(10000);
+    let dot_balance: FixedNumber = FixedNumber::from_num(25);
+
+    join_chain_calls!(
+        call_chain(
+            client,
+            nonces.clone(),
+            alice_key,
+            SetBalanceCall {
+                asset: Asset::Usd,
+                account_id: account.clone(),
+                balance: usd_balance,
+            },
+        ),
+        call_chain(
+            client,
+            nonces.clone(),
+            alice_key,
+            SetBalanceCall {
+                asset: Asset::Eq,
+                account_id: account.clone(),
+                balance: eq_balance,
+            },
+        ),
+        call_chain(
+            client,
+            nonces.clone(),
+            alice_key,
+            SetBalanceCall {
+                asset: Asset::Eth,
+                account_id: account.clone(),
+                balance: eth_balance,
+            },
+        ),
+        call_chain(
+            client,
+            nonces.clone(),
+            alice_key,
+            SetBalanceCall {
+                asset: Asset::Btc,
+                account_id: account.clone(),
+                balance: btc_balance,
+            },
+        ),
+        call_chain(
+            client,
+            nonces.clone(),
+            alice_key,
+            SetBalanceCall {
+                asset: Asset::Eos,
+                account_id: account.clone(),
+                balance: eos_balance,
+            },
+        ),
+        call_chain(
+            client,
+            nonces.clone(),
+            alice_key,
+            SetBalanceCall {
+                asset: Asset::Dot,
+                account_id: account.clone(),
+                balance: dot_balance,
+            },
+        ),
+    );
+
+    let actual_btc_balance = client
+        .balances(account.clone(), Asset::Btc, Option::None)
+        .await?;
+    let actual_eos_balance = client
+        .balances(account.clone(), Asset::Eos, Option::None)
+        .await?;
+    let actual_eq_balance = client
+        .balances(account.clone(), Asset::Eq, Option::None)
+        .await?;
+    let actual_eth_balance = client
+        .balances(account.clone(), Asset::Eth, Option::None)
+        .await?;
+    let actual_usd_balance = client
+        .balances(account.clone(), Asset::Usd, Option::None)
+        .await?;
+    let actual_dot_balance = client
+        .balances(account.clone(), Asset::Dot, Option::None)
+        .await?;
+
+    assert!(actual_btc_balance == btc_balance);
+    assert!(actual_eos_balance == eos_balance);
+    assert!(actual_eq_balance == eq_balance);
+    assert!(actual_eth_balance == eth_balance);
+    assert!(actual_usd_balance == usd_balance);
+    assert!(actual_dot_balance == dot_balance);
+
+    Ok(())
+}
+
 async fn set_prices_after_month(
     client: &Client<TestRuntime>,
     alice_key: AccountKey,
@@ -711,6 +1101,7 @@ async fn set_prices_after_month(
     let eth_price: FixedNumber = FixedNumber::from_num(388.18);
     let btc_price: FixedNumber = FixedNumber::from_num(14024);
     let eos_price: FixedNumber = FixedNumber::from_num(2.368);
+    let dot_price: FixedNumber = FixedNumber::from_num(4.029);
 
     let initial_timestamp: u64 = client.now(Option::None).await?;
 
@@ -765,6 +1156,16 @@ async fn set_prices_after_month(
                 _runtime: PhantomData,
             },
         ),
+        call_chain(
+            client,
+            nonces.clone(),
+            alice_key,
+            SetPriceCall {
+                asset: Asset::Dot,
+                value: dot_price,
+                _runtime: PhantomData,
+            },
+        ),
     );
 
     let curr_btc = client.price_points(Asset::Btc, Option::None).await?;
@@ -772,30 +1173,35 @@ async fn set_prices_after_month(
     let curr_eth = client.price_points(Asset::Eth, Option::None).await?;
     let curr_eq = client.price_points(Asset::Eq, Option::None).await?;
     let curr_usd = client.price_points(Asset::Usd, Option::None).await?;
+    let curr_dot = client.price_points(Asset::Dot, Option::None).await?;
 
     assert!(curr_btc == btc_price);
     assert!(curr_eos == eos_price);
     assert!(curr_eth == eth_price);
     assert!(curr_eq == eq_price);
     assert!(curr_usd == usd_price);
+    assert!(curr_dot == dot_price);
 
     let btc_update = client.updates(Asset::Btc, Option::None).await?.unwrap();
     let eos_update = client.updates(Asset::Eos, Option::None).await?.unwrap();
     let eth_update = client.updates(Asset::Eth, Option::None).await?.unwrap();
     let eq_update = client.updates(Asset::Eq, Option::None).await?.unwrap();
     let usd_update = client.updates(Asset::Usd, Option::None).await?.unwrap();
+    let dot_update = client.updates(Asset::Dot, Option::None).await?.unwrap();
 
     assert!(btc_update.price == btc_price);
     assert!(eos_update.price == eos_price);
     assert!(eth_update.price == eth_price);
     assert!(eq_update.price == eq_price);
     assert!(usd_update.price == usd_price);
+    assert!(dot_update.price == dot_price);
 
     assert!(btc_update.time == Duration::from_millis(initial_timestamp));
     assert!(eos_update.time == Duration::from_millis(initial_timestamp));
     assert!(eth_update.time == Duration::from_millis(initial_timestamp));
     assert!(eq_update.time == Duration::from_millis(initial_timestamp));
     assert!(usd_update.time == Duration::from_millis(initial_timestamp));
+    assert!(dot_update.time == Duration::from_millis(initial_timestamp));
 
     println!("Moving time");
     call_chain(
@@ -988,20 +1394,54 @@ async fn set_prices_and_move_time(
         FixedNumber::from_num(0.68629),
     ];
 
+    let dot_prices: Vec<FixedNumber> = vec![
+        FixedNumber::from_num(4.18),
+        FixedNumber::from_num(4.166),
+        FixedNumber::from_num(3.753),
+        FixedNumber::from_num(3.859),
+        FixedNumber::from_num(4.122),
+        FixedNumber::from_num(4.263),
+        FixedNumber::from_num(4.246),
+        FixedNumber::from_num(4.249),
+        FixedNumber::from_num(4.31),
+        FixedNumber::from_num(4.256),
+        FixedNumber::from_num(4.197),
+        FixedNumber::from_num(4.097),
+        FixedNumber::from_num(3.914),
+        FixedNumber::from_num(3.969),
+        FixedNumber::from_num(4.111),
+        FixedNumber::from_num(3.989),
+        FixedNumber::from_num(3.914),
+        FixedNumber::from_num(4.143),
+        FixedNumber::from_num(4.27),
+        FixedNumber::from_num(4.266),
+        FixedNumber::from_num(4.36),
+        FixedNumber::from_num(4.332),
+        FixedNumber::from_num(4.707),
+        FixedNumber::from_num(4.68),
+        FixedNumber::from_num(4.367),
+        FixedNumber::from_num(4.057),
+        FixedNumber::from_num(4.086),
+        FixedNumber::from_num(4.183),
+        FixedNumber::from_num(4.222),
+        FixedNumber::from_num(4.037),
+    ];
+
     assert!(
         btc_prices.len() == eos_prices.len()
             && eos_prices.len() == usd_prices.len()
             && usd_prices.len() == eth_prices.len()
             && eth_prices.len() == eq_prices.len()
+            && eq_prices.len() == dot_prices.len()
             && btc_prices.len() == 30
     );
 
-    let prices_tuple = izip!(usd_prices, eq_prices, eth_prices, btc_prices, eos_prices);
+    let prices_tuple = izip!(usd_prices, eq_prices, eth_prices, btc_prices, eos_prices, dot_prices);
 
     println!("Setting initial monthly prices");
 
     let mut counter = 1;
-    for (usd, eq, eth, btc, eos) in prices_tuple {
+    for (usd, eq, eth, btc, eos, dot) in prices_tuple {
         println!("Setting prices on iteration #{}", counter);
         let initial_timestamp: u64 = client.now(Option::None).await?;
 
@@ -1056,6 +1496,16 @@ async fn set_prices_and_move_time(
                     _runtime: PhantomData,
                 },
             ),
+            call_chain(
+                client,
+                nonces.clone(),
+                alice_key,
+                SetPriceCall {
+                    asset: Asset::Dot,
+                    value: dot,
+                    _runtime: PhantomData,
+                },
+            ),
         );
 
         let curr_btc = client.price_points(Asset::Btc, Option::None).await?;
@@ -1063,30 +1513,35 @@ async fn set_prices_and_move_time(
         let curr_eth = client.price_points(Asset::Eth, Option::None).await?;
         let curr_eq = client.price_points(Asset::Eq, Option::None).await?;
         let curr_usd = client.price_points(Asset::Usd, Option::None).await?;
+        let curr_dot = client.price_points(Asset::Dot, Option::None).await?;
 
         assert!(curr_btc == btc);
         assert!(curr_eos == eos);
         assert!(curr_eth == eth);
         assert!(curr_eq == eq);
         assert!(curr_usd == usd);
+        assert!(curr_dot == dot);
 
         let btc_update = client.updates(Asset::Btc, Option::None).await?.unwrap();
         let eos_update = client.updates(Asset::Eos, Option::None).await?.unwrap();
         let eth_update = client.updates(Asset::Eth, Option::None).await?.unwrap();
         let eq_update = client.updates(Asset::Eq, Option::None).await?.unwrap();
         let usd_update = client.updates(Asset::Usd, Option::None).await?.unwrap();
+        let dot_update = client.updates(Asset::Dot, Option::None).await?.unwrap();
 
         assert!(btc_update.price == btc);
         assert!(eos_update.price == eos);
         assert!(eth_update.price == eth);
         assert!(eq_update.price == eq);
         assert!(usd_update.price == usd);
+        assert!(dot_update.price == dot);
 
         assert!(btc_update.time == Duration::from_millis(initial_timestamp));
         assert!(eos_update.time == Duration::from_millis(initial_timestamp));
         assert!(eth_update.time == Duration::from_millis(initial_timestamp));
         assert!(eq_update.time == Duration::from_millis(initial_timestamp));
         assert!(usd_update.time == Duration::from_millis(initial_timestamp));
+        assert!(dot_update.time == Duration::from_millis(initial_timestamp));
 
         println!("Moving time");
         call_chain(

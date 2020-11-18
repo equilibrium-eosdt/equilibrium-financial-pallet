@@ -1155,7 +1155,7 @@ mod calc_vol {
     use crate::*;
     use approx::assert_abs_diff_eq;
     use frame_support::assert_ok;
-    use mock::{new_test_ext, Asset, FinancialModule, Test};
+    use mock::{alternative_test_ext, new_test_ext, Asset, FinancialModule, Test};
     use substrate_fixed::traits::LossyInto;
 
     #[test]
@@ -1319,6 +1319,21 @@ mod calc_vol {
     }
 
     #[test]
+    fn calc_vol_regular_asset_with_prices_cause_log_error() {
+        alternative_test_ext().execute_with(|| {
+            let actual = <FinancialModule as Financial>::calc_vol(
+                CalcReturnType::Log,
+                CalcVolatilityType::Regular,
+                Asset::Eq,
+            );
+            let expected: Result<<mock::Test as Trait>::Price, DispatchError> =
+                Err(Error::<Test>::DivisionByZero.into());
+
+            assert_eq!(actual, expected);
+        });
+    }
+
+    #[test]
     fn calc_vol_exponential_asset_with_big_prices() {
         new_test_ext().execute_with(|| {
             let actual = <FinancialModule as Financial>::calc_vol(
@@ -1371,7 +1386,7 @@ mod calc_corr {
     use crate::*;
     use approx::assert_abs_diff_eq;
     use frame_support::assert_ok;
-    use mock::{new_test_ext, Asset, FinancialModule, Test};
+    use mock::{alternative_test_ext, new_test_ext, Asset, FinancialModule, Test};
     use substrate_fixed::traits::LossyInto;
 
     #[test]
@@ -1496,6 +1511,22 @@ mod calc_corr {
     }
 
     #[test]
+    fn calc_corr_exponential_asset_with_prices_cause_log_error() {
+        alternative_test_ext().execute_with(|| {
+            let actual = <FinancialModule as Financial>::calc_corr(
+                CalcReturnType::Log,
+                CalcVolatilityType::Exponential(36),
+                Asset::Btc,
+                Asset::Eq,
+            );
+            let expected: Result<(<mock::Test as Trait>::Price, Range<Duration>), DispatchError> =
+                Err(Error::<Test>::DivisionByZero.into());
+
+            assert_eq!(actual, expected);
+        });
+    }
+
+    #[test]
     fn calc_corr_regular_asset_with_zero_prices() {
         new_test_ext().execute_with(|| {
             let actual = <FinancialModule as Financial>::calc_corr(
@@ -1537,7 +1568,7 @@ mod calc_portf {
     use substrate_fixed::traits::LossyInto;
 
     #[test]
-    fn calc_portf_vol_btc_eos_regular_regular_1() {
+    fn calc_portf_vol_btc_eos_regular_regular() {
         new_test_ext_btc_eos_only().execute_with(|| {
             set_balance(333, Asset::Btc, FixedNumber::from_num(10));
             set_balance(333, Asset::Eos, FixedNumber::from_num(10000));
@@ -1556,44 +1587,7 @@ mod calc_portf {
     }
 
     #[test]
-    fn calc_portf_vol_btc_eos_regular_regular_2() {
-        new_test_ext_btc_eos_only().execute_with(|| {
-            set_balance(333, Asset::Eos, FixedNumber::from_num(35));
-
-            let actual = <FinancialModule as Financial>::calc_portf_vol(
-                CalcReturnType::Regular,
-                CalcVolatilityType::Regular,
-                333,
-            );
-            assert_ok!(&actual);
-            let actual = actual.unwrap();
-            let actual: f64 = actual.lossy_into();
-            let expected = 0.03800049849557;
-            assert_abs_diff_eq!(actual, expected, epsilon = 1e-8);
-        });
-    }
-
-    #[test]
-    fn calc_portf_vol_btc_eos_regular_regular_3() {
-        new_test_ext_btc_eos_only().execute_with(|| {
-            set_balance(333, Asset::Btc, FixedNumber::from_num(15));
-            set_balance(333, Asset::Eos, FixedNumber::from_num(725));
-
-            let actual = <FinancialModule as Financial>::calc_portf_vol(
-                CalcReturnType::Regular,
-                CalcVolatilityType::Regular,
-                333,
-            );
-            assert_ok!(&actual);
-            let actual = actual.unwrap();
-            let actual: f64 = actual.lossy_into();
-            let expected = 0.04150814612241;
-            assert_abs_diff_eq!(actual, expected, epsilon = 1e-8);
-        });
-    }
-
-    #[test]
-    fn calc_portf_var_btc_eos_regular_regular_1() {
+    fn calc_portf_var_btc_eos_regular_regular() {
         new_test_ext_btc_eos_only().execute_with(|| {
             set_balance(333, Asset::Btc, FixedNumber::from_num(10));
             set_balance(333, Asset::Eos, FixedNumber::from_num(10000));
@@ -1611,43 +1605,143 @@ mod calc_portf {
             assert_abs_diff_eq!(actual, expected, epsilon = 1e-8);
         });
     }
+}
+
+#[cfg(test)]
+mod calc_rv {
+    use crate::*;
+
+    use approx::assert_abs_diff_eq;
+    use frame_support::assert_ok;
+    use mock::{alternative_test_ext, Asset, FinancialModule, Test};
+    use substrate_fixed::traits::LossyInto;
 
     #[test]
-    fn calc_portf_var_btc_eos_regular_regular_2() {
-        new_test_ext_btc_eos_only().execute_with(|| {
-            set_balance(333, Asset::Eos, FixedNumber::from_num(35));
-
-            let actual = <FinancialModule as Financial>::calc_portf_var(
-                CalcReturnType::Regular,
-                CalcVolatilityType::Regular,
-                333,
-                5,
-            );
+    fn calc_rv_btc_regular() {
+        alternative_test_ext().execute_with(|| {
+            let actual =
+                <FinancialModule as Financial>::calc_rv(CalcReturnType::Regular, 36, Asset::Btc);
             assert_ok!(&actual);
             let actual = actual.unwrap();
             let actual: f64 = actual.lossy_into();
-            let expected = 0.17840908472867;
+            let expected = 0.0383157575663070;
             assert_abs_diff_eq!(actual, expected, epsilon = 1e-8);
         });
     }
 
     #[test]
-    fn calc_portf_var_btc_eos_regular_regular_3() {
-        new_test_ext_btc_eos_only().execute_with(|| {
-            set_balance(333, Asset::Btc, FixedNumber::from_num(15));
-            set_balance(333, Asset::Eos, FixedNumber::from_num(725));
-
-            let actual = <FinancialModule as Financial>::calc_portf_var(
-                CalcReturnType::Regular,
-                CalcVolatilityType::Regular,
-                333,
-                5,
-            );
+    fn calc_rv_btc_log() {
+        alternative_test_ext().execute_with(|| {
+            let actual =
+                <FinancialModule as Financial>::calc_rv(CalcReturnType::Log, 36, Asset::Btc);
             assert_ok!(&actual);
             let actual = actual.unwrap();
             let actual: f64 = actual.lossy_into();
-            let expected = 0.18233883857922;
+            let expected = 0.044161576895487;
             assert_abs_diff_eq!(actual, expected, epsilon = 1e-8);
+        });
+    }
+
+    #[test]
+    fn calc_rv_eos_regular() {
+        alternative_test_ext().execute_with(|| {
+            let actual =
+                <FinancialModule as Financial>::calc_rv(CalcReturnType::Regular, 36, Asset::Eos);
+            assert_ok!(&actual);
+            let actual = actual.unwrap();
+            let actual: f64 = actual.lossy_into();
+            let expected = 0.0280740346113347;
+            assert_abs_diff_eq!(actual, expected, epsilon = 1e-8);
+        });
+    }
+
+    #[test]
+    fn calc_rv_eos_log() {
+        alternative_test_ext().execute_with(|| {
+            let actual =
+                <FinancialModule as Financial>::calc_rv(CalcReturnType::Log, 36, Asset::Eos);
+            assert_ok!(&actual);
+            let actual = actual.unwrap();
+            let actual: f64 = actual.lossy_into();
+            let expected = 0.028657030760318;
+            assert_abs_diff_eq!(actual, expected, epsilon = 1e-8);
+        });
+    }
+
+    #[test]
+    fn calc_rv_asset_without_prices() {
+        alternative_test_ext().execute_with(|| {
+            let actual =
+                <FinancialModule as Financial>::calc_rv(CalcReturnType::Regular, 36, Asset::Usd);
+            let expected: Result<<mock::Test as Trait>::Price, DispatchError> =
+                Err(Error::<Test>::NotEnoughPoints.into());
+            assert_eq!(actual, expected);
+        });
+    }
+
+    #[test]
+    fn calc_rv_asset_regular_with_small_prices() {
+        alternative_test_ext().execute_with(|| {
+            let actual =
+                <FinancialModule as Financial>::calc_rv(CalcReturnType::Regular, 36, Asset::Dot);
+            let expected: Result<<mock::Test as Trait>::Price, DispatchError> =
+                Err(Error::<Test>::Overflow.into());
+            assert_eq!(actual, expected);
+        });
+    }
+
+    #[test]
+    fn calc_rv_asset_regular_with_big_prices() {
+        alternative_test_ext().execute_with(|| {
+            let actual =
+                <FinancialModule as Financial>::calc_rv(CalcReturnType::Regular, 36, Asset::Eq);
+            let expected: Result<<mock::Test as Trait>::Price, DispatchError> =
+                Err(Error::<Test>::Overflow.into());
+            assert_eq!(actual, expected);
+        });
+    }
+
+    #[test]
+    fn calc_rv_asset_regular_with_zero_prices() {
+        alternative_test_ext().execute_with(|| {
+            let actual =
+                <FinancialModule as Financial>::calc_rv(CalcReturnType::Regular, 36, Asset::Eth);
+            let expected: Result<<mock::Test as Trait>::Price, DispatchError> =
+                Err(Error::<Test>::DivisionByZero.into());
+            assert_eq!(actual, expected);
+        });
+    }
+
+    #[test]
+    fn calc_rv_asset_log_with_zero_prices() {
+        alternative_test_ext().execute_with(|| {
+            let actual =
+                <FinancialModule as Financial>::calc_rv(CalcReturnType::Log, 36, Asset::Eth);
+            let expected: Result<<mock::Test as Trait>::Price, DispatchError> =
+                Err(Error::<Test>::DivisionByZero.into());
+            assert_eq!(actual, expected);
+        });
+    }
+
+    #[test]
+    fn calc_rv_asset_log_with_small_prices_cause_log_error() {
+        alternative_test_ext().execute_with(|| {
+            let actual =
+                <FinancialModule as Financial>::calc_rv(CalcReturnType::Log, 36, Asset::Dot);
+            let expected: Result<<mock::Test as Trait>::Price, DispatchError> =
+                Err(Error::<Test>::Transcendental.into());
+            assert_eq!(actual, expected);
+        });
+    }
+
+    #[test]
+    fn calc_rv_asset_log_with_big_prices_cause_log_error() {
+        alternative_test_ext().execute_with(|| {
+            let actual =
+                <FinancialModule as Financial>::calc_rv(CalcReturnType::Log, 36, Asset::Eq);
+            let expected: Result<<mock::Test as Trait>::Price, DispatchError> =
+                Err(Error::<Test>::DivisionByZero.into());
+            assert_eq!(actual, expected);
         });
     }
 }
