@@ -6,7 +6,6 @@ name = "financial-primitives"
 version = "0.1.0"
 license = "Apache-2.0"
 repository = "https://github.com/equilibrium-eosdt/equilibrium-financial-pallet"
-documentation = "https://docs.rs/financial-primitives"
 
 [dependencies.frame-support]
 default-features = false
