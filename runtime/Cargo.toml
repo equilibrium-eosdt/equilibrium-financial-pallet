@@ -1,0 +1,216 @@
+[package]
+authors = ['equilibrium']
+edition = '2018'
+name = 'node-template-runtime'
+version = '0.1.0'
+
+[package.metadata.docs.rs]
+targets = ['x86_64-unknown-linux-gnu']
+
+[dependencies.codec]
+default-features = false
+features = ['derive']
+package = 'parity-scale-codec'
+version = '3.0.0'
+
+[dependencies.frame-executive]
+default-features = false
+git = 'https://github.com/paritytech/substrate.git'
+branch="polkadot-v0.9.29"
+
+[dependencies.frame-support]
+default-features = false
+git = 'https://github.com/paritytech/substrate.git'
+branch="polkadot-v0.9.29"
+
+[dependencies.frame-system]
+default-features = false
+git = 'https://github.com/paritytech/substrate.git'
+branch="polkadot-v0.9.29"
+
+[dependencies.frame-system-rpc-runtime-api]
+default-features = false
+git = 'https://github.com/paritytech/substrate.git'
+branch="polkadot-v0.9.29"
+
+[dependencies.pallet-aura]
+default-features = false
+git = 'https://github.com/paritytech/substrate.git'
+branch="polkadot-v0.9.29"
+
+[dependencies.pallet-balances]
+default-features = false
+git = 'https://github.com/paritytech/substrate.git'
+branch="polkadot-v0.9.29"
+
+[dependencies.pallet-grandpa]
+default-features = false
+git = 'https://github.com/paritytech/substrate.git'
+branch="polkadot-v0.9.29"
+
+[dependencies.pallet-randomness-collective-flip]
+default-features = false
+git = 'https://github.com/paritytech/substrate.git'
+branch="polkadot-v0.9.29"
+
+[dependencies.pallet-sudo]
+default-features = false
+git = 'https://github.com/paritytech/substrate.git'
+branch="polkadot-v0.9.29"
+
+[dependencies.pallet-timestamp]
+default-features = false
+git = 'https://github.com/paritytech/substrate.git'
+branch="polkadot-v0.9.29"
+
+[dependencies.pallet-transaction-payment]
+default-features = false
+git = 'https://github.com/paritytech/substrate.git'
+branch="polkadot-v0.9.29"
+
+[dependencies.pallet-transaction-payment-rpc-runtime-api]
+default-features = false
+git = 'https://github.com/paritytech/substrate.git'
+branch="polkadot-v0.9.29"
+
+[dependencies.serde]
+features = ['derive']
+optional = true
+version = '1.0.101'
+
+[dependencies.sp-api]
+default-features = false
+git = 'https://github.com/paritytech/substrate.git'
+branch="polkadot-v0.9.29"
+
+[dependencies.sp-block-builder]
+default-features = false
+git = 'https://github.com/paritytech/substrate.git'
+branch="polkadot-v0.9.29"
+
+[dependencies.sp-consensus-aura]
+default-features = false
+git = 'https://github.com/paritytech/substrate.git'
+branch="polkadot-v0.9.29"
+
+[dependencies.sp-core]
+default-features = false
+git = 'https://github.com/paritytech/substrate.git'
+branch="polkadot-v0.9.29"
+
+[dependencies.sp-inherents]
+default-features = false
+git = 'https://github.com/paritytech/substrate.git'
+branch="polkadot-v0.9.29"
+
+[dependencies.sp-offchain]
+default-features = false
+git = 'https://github.com/paritytech/substrate.git'
+branch="polkadot-v0.9.29"
+
+[dependencies.sp-runtime]
+default-features = false
+git = 'https://github.com/paritytech/substrate.git'
+branch="polkadot-v0.9.29"
+
+[dependencies.sp-session]
+default-features = false
+git = 'https://github.com/paritytech/substrate.git'
+branch="polkadot-v0.9.29"
+
+[dependencies.sp-std]
+default-features = false
+git = 'https://github.com/paritytech/substrate.git'
+branch="polkadot-v0.9.29"
+
+[dependencies.sp-transaction-pool]
+default-features = false
+git = 'https://github.com/paritytech/substrate.git'
+branch="polkadot-v0.9.29"
+
+[dependencies.sp-version]
+default-features = false
+git = 'https://github.com/paritytech/substrate.git'
+branch="polkadot-v0.9.29"
+
+[dependencies.oracle]
+default-features = false
+package = 'oracle'
+path = '../pallets/oracle'
+version = '0.1.0'
+
+[dependencies.financial-pallet]
+default-features = false
+package = 'financial-pallet'
+path = '../pallets/financial'
+version = '0.1.2'
+
+[dependencies.manual-timestamp]
+default-features = false
+package = 'manual-timestamp'
+path = '../pallets/manual-timestamp'
+version = '0.1.0'
+
+[dependencies.portfolio]
+default-features = false
+package = 'portfolio'
+path = '../pallets/portfolio'
+version = '0.1.0'
+
+[dependencies.common]
+default-features = false
+package = 'common'
+path = '../common'
+version = '0.1.0'
+
+[dependencies.substrate-fixed]
+default-features = false
+git = "https://github.com/equilibrium-eosdt/substrate-fixed"
+branch = "scale-info-2.0.1"
+package = "substrate-fixed"
+
+[dependencies.financial-primitives]
+default-features = false
+package = "financial-primitives"
+path = "../financial-primitives"
+version = "0.1.0"
+
+[features]
+default = ['std']
+std = [
+    'codec/std',
+    'frame-executive/std',
+    'frame-support/std',
+    'frame-system/std',
+    'frame-system-rpc-runtime-api/std',
+    'pallet-aura/std',
+    'pallet-balances/std',
+    'pallet-grandpa/std',
+    'pallet-randomness-collective-flip/std',
+    'pallet-sudo/std',
+    'pallet-timestamp/std',
+    'pallet-transaction-payment/std',
+    'pallet-transaction-payment-rpc-runtime-api/std',
+    'serde',
+    'sp-api/std',
+    'sp-block-builder/std',
+    'sp-consensus-aura/std',
+    'sp-core/std',
+    'sp-inherents/std',
+    'sp-offchain/std',
+    'sp-runtime/std',
+    'sp-session/std',
+    'sp-std/std',
+    'sp-transaction-pool/std',
+    'sp-version/std',
+    'financial-pallet/std',
+    'oracle/std',
+    'substrate-fixed/std',
+    'common/std',
+    'manual-timestamp/std',
+]
+
+[build-dependencies.substrate-wasm-builder]
+git = 'https://github.com/paritytech/substrate'
+package = 'substrate-wasm-builder'
+branch="polkadot-v0.9.29"

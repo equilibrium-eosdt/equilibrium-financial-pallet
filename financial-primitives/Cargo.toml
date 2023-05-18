@@ -1,0 +1,37 @@
+[package]
+authors = ["equilibrium"]
+description = "Financial primitives"
+edition = "2018"
+name = "financial-primitives"
+version = "0.1.0"
+
+[dependencies]
+scale-info = { version = "2.0.1", default-features = false, features = ["derive"] }
+
+[dependencies.frame-support]
+default-features = false
+git = "https://github.com/paritytech/substrate.git"
+branch = "polkadot-v0.9.29"
+
+[dependencies.sp-std]
+default-features = false
+git = "https://github.com/paritytech/substrate.git"
+branch = "polkadot-v0.9.29"
+
+[dependencies.codec]
+default-features = false
+features = ["derive"]
+package = "parity-scale-codec"
+version = "3.0.0"
+
+[dev-dependencies.chrono]
+default-features = false
+version = "0.4"
+
+[features]
+default = ["std"]
+std = [
+    "frame-support/std",
+    "sp-std/std",
+    "codec/std",
+]

@@ -1,0 +1,13 @@
+{
+    "local": true,
+    "sudo": "//Alice",
+    "endpoint": "ws://localhost:9944",
+    "tests_to_launch": [
+        "test_financial",
+        "test_recalc_asset",
+        "test_oracle"
+    ],
+    "validators": [
+        "Alice//Stash"
+    ]
+}

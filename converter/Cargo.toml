@@ -1,0 +1,12 @@
+[package]
+name = "converter"
+version = "0.1.0"
+authors = ["Paul <soap4me@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+
+[dependencies.substrate-fixed]
+git = "https://github.com/equilibrium-eosdt/substrate-fixed"
+branch = "scale-info-2.0.1"
+package = "substrate-fixed"

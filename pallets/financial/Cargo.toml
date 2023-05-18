@@ -1,0 +1,95 @@
+[package]
+authors = ["equilibrium"]
+description = "Financial pallet"
+edition = "2018"
+name = "financial-pallet"
+version = "0.1.2"
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+log = "0.4"
+scale-info = { version = "2.0.1", default-features = false, features = ["derive"] }
+
+[dependencies.serde]
+features = ["derive"]
+optional = true
+version = "1.0.101"
+
+[dependencies.codec]
+default-features = false
+features = ["derive"]
+package = "parity-scale-codec"
+version = "3.0.0"
+
+[dependencies.frame-support]
+default-features = false
+git = "https://github.com/paritytech/substrate.git"
+branch = "polkadot-v0.9.29"
+
+[dependencies.frame-system]
+default-features = false
+git = "https://github.com/paritytech/substrate.git"
+branch = "polkadot-v0.9.29"
+
+[dependencies.sp-runtime]
+default-features = false
+git = "https://github.com/paritytech/substrate.git"
+branch = "polkadot-v0.9.29"
+
+[dependencies.substrate-fixed]
+default-features = false
+git = "https://github.com/equilibrium-eosdt/substrate-fixed"
+branch = "scale-info-2.0.1"
+package = "substrate-fixed"
+
+[dependencies.sp-std]
+default-features = false
+git = "https://github.com/paritytech/substrate.git"
+branch = "polkadot-v0.9.29"
+
+[dependencies.financial-primitives]
+default-features = false
+package = "financial-primitives"
+path = "../../financial-primitives"
+version = "0.1.0"
+
+[dev-dependencies.sp-core]
+default-features = false
+git = "https://github.com/paritytech/substrate.git"
+branch = "polkadot-v0.9.29"
+
+[dev-dependencies.sp-io]
+default-features = false
+git = "https://github.com/paritytech/substrate.git"
+branch = "polkadot-v0.9.29"
+
+[dev-dependencies.chrono]
+default-features = false
+version = "0.4"
+
+[dev-dependencies.approx]
+default-features = false
+version = "0.3.2"
+
+[dev-dependencies.common]
+default-features = false
+package = 'common'
+path = '../../common'
+version = '0.1.0'
+
+[features]
+default = ["std"]
+production = []
+std = [
+  "serde",
+  "codec/std",
+  "frame-support/std",
+  "frame-system/std",
+  "sp-runtime/std",
+  "substrate-fixed/std",
+  "sp-std/std",
+  "financial-primitives/std",
+  "common/std",
+]
