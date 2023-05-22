@@ -7,7 +7,7 @@ version = '0.1.0'
 [dependencies.frame-support]
 default-features = false
 git = "https://github.com/paritytech/substrate.git"
-branch = "polkadot-v0.9.29"
+branch = "polkadot-v0.9.42"
 
 [dependencies.scale-info]
 version = "2.0.1"
@@ -34,7 +34,7 @@ version = "0.1.0"
 [dependencies.sp-std]
 default-features = false
 git = "https://github.com/paritytech/substrate.git"
-branch = "polkadot-v0.9.29"
+branch = "polkadot-v0.9.42"
 
 [features]
 default = ['std']
