@@ -36,7 +36,10 @@ fn create_duration(
         .ymd(year, month, day)
         .and_hms(hour, minute, second)
         .timestamp();
-    Duration { secs: timestamp as u64, nanos: 0 }
+    Duration {
+        secs: timestamp as u64,
+        nanos: 0,
+    }
 }
 
 #[cfg(test)]

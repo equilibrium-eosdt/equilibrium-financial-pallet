@@ -16,10 +16,13 @@
 use crate as financial_pallet;
 use crate::{Config, Module};
 use chrono::prelude::*;
+pub use common::Asset;
+use core::convert::{TryFrom, TryInto};
+use financial_pallet::Duration;
 use financial_primitives::{BalanceAware, CalcReturnType, CalcVolatilityType};
 use frame_support::codec::{Decode, Encode};
 use frame_support::dispatch::DispatchError;
-use frame_support::traits::{UnixTime, ConstU32};
+use frame_support::traits::{ConstU32, UnixTime};
 use frame_support::{parameter_types, weights::Weight};
 use frame_system as system;
 use serde::{Deserialize, Serialize};
@@ -32,9 +35,6 @@ use sp_runtime::{
 use std::cell::RefCell;
 use std::collections::HashMap;
 use substrate_fixed::types::I64F64;
-use core::convert::{TryFrom, TryInto};
-pub use common::Asset;
-use financial_pallet::Duration;
 
 type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Test>;
 type Block = frame_system::mocking::MockBlock<Test>;
@@ -253,18 +253,17 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
                     .into_iter()
                     .map(FixedNumber::from_num)
                     .collect(),
-                    prev_period_now.into(),
-                ),
-            (Asset::Eq, initial_eq_prices(),                 prev_period_now.into(),
-        ),
+                prev_period_now.into(),
+            ),
+            (Asset::Eq, initial_eq_prices(), prev_period_now.into()),
             (
                 Asset::Eth,
                 initial_eth_prices()
                     .into_iter()
                     .map(FixedNumber::from_num)
                     .collect(),
-                    prev_period_now.into(),
-                ),
+                prev_period_now.into(),
+            ),
         ],
     }
     .assimilate_storage(&mut t)
@@ -287,34 +286,33 @@ pub fn alternative_test_ext() -> sp_io::TestExternalities {
                     .into_iter()
                     .map(FixedNumber::from_num)
                     .collect(),
-                    prev_period_now.into(),
-                ),
+                prev_period_now.into(),
+            ),
             (
                 Asset::Eos,
                 initial_eos_prices()
                     .into_iter()
                     .map(FixedNumber::from_num)
                     .collect(),
-                    prev_period_now.into(),
-                ),
-            (Asset::Eq, alternative_eq_prices(),                 prev_period_now.into(),
-        ),
+                prev_period_now.into(),
+            ),
+            (Asset::Eq, alternative_eq_prices(), prev_period_now.into()),
             (
                 Asset::Eth,
                 initial_eth_prices()
                     .into_iter()
                     .map(FixedNumber::from_num)
                     .collect(),
-                    prev_period_now.into(),
-                ),
+                prev_period_now.into(),
+            ),
             (
                 Asset::Dot,
                 alternative_dot_prices()
                     .into_iter()
                     .map(FixedNumber::from_num)
                     .collect(),
-                    prev_period_now.into(),
-                ),
+                prev_period_now.into(),
+            ),
         ],
     }
     .assimilate_storage(&mut t)
@@ -344,16 +342,16 @@ pub fn new_test_ext_btc_eos_only() -> sp_io::TestExternalities {
                     .into_iter()
                     .map(FixedNumber::from_num)
                     .collect(),
-                    prev_period_now.into(),
-                ),
+                prev_period_now.into(),
+            ),
             (
                 Asset::Eos,
                 initial_eos_prices()
                     .into_iter()
                     .map(FixedNumber::from_num)
                     .collect(),
-                    prev_period_now.into(),
-                ),
+                prev_period_now.into(),
+            ),
         ],
     }
     .assimilate_storage(&mut t)

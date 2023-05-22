@@ -1,12 +1,14 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+use core::convert::TryInto;
 use financial_primitives::BalanceAware;
 use frame_support::codec::Codec;
 use frame_support::dispatch::{DispatchError, DispatchResult, Parameter};
-use frame_support::{decl_error, decl_event, decl_module, decl_storage, dispatch, traits::Get, weights::Weight};
+use frame_support::{
+    decl_error, decl_event, decl_module, decl_storage, dispatch, traits::Get, weights::Weight,
+};
 use frame_system::ensure_signed;
 use sp_std::vec::Vec;
-use core::convert::TryInto;
 
 #[cfg(test)]
 mod mock;

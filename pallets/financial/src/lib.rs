@@ -370,12 +370,11 @@ use financial_primitives::capvec::CapVec;
 use financial_primitives::{
     BalanceAware, CalcReturnType, CalcVolatilityType, OnPriceSet, PricePeriod, PricePeriodError,
 };
+use frame_support::codec::{Decode, Encode, FullCodec};
 use frame_support::dispatch::{DispatchError, Parameter};
 use frame_support::storage::{IterableStorageMap, StorageMap};
 use frame_support::traits::{Get, UnixTime};
-use frame_support::{
-    codec::{Decode, Encode, FullCodec},
-};
+use frame_support::weights::Weight;
 use frame_support::{decl_error, decl_event, decl_module, decl_storage, dispatch, ensure};
 use frame_system::ensure_signed;
 use math::{
@@ -392,7 +391,6 @@ use sp_std::prelude::Vec;
 use sp_std::vec;
 use substrate_fixed::traits::{Fixed, FixedSigned, ToFixed};
 use substrate_fixed::transcendental::sqrt;
-use frame_support::weights::Weight;
 
 pub use math::CalcCorrelationType;
 
@@ -443,10 +441,23 @@ pub trait Config: frame_system::Config {
     >;
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Encode, Decode, Debug, scale_info::TypeInfo)]
+#[derive(
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Encode,
+    Decode,
+    Debug,
+    scale_info::TypeInfo,
+)]
 pub struct Duration {
     secs: u64,
-    nanos: u32
+    nanos: u32,
 }
 
 impl Duration {
@@ -491,7 +502,8 @@ impl core::ops::Add for Duration {
     type Output = Duration;
 
     fn add(self, rhs: Self) -> Self::Output {
-        self.checked_add(rhs).expect("overflow when adding durations")
+        self.checked_add(rhs)
+            .expect("overflow when adding durations")
     }
 }
 
@@ -499,7 +511,7 @@ impl From<core::time::Duration> for Duration {
     fn from(duration: core::time::Duration) -> Self {
         Self {
             secs: duration.as_secs(),
-            nanos: duration.subsec_nanos()
+            nanos: duration.subsec_nanos(),
         }
     }
 }
@@ -1079,7 +1091,10 @@ fn get_curr_period_info(
         .map_err(|_| PricePeriodError::Overflow)?;
     let delta: Result<_, PricePeriodError> =
         curr.checked_sub(prev).ok_or(PricePeriodError::Overflow);
-    Ok((price_period.get_period_id_start(curr_period_id)?.into(), delta?))
+    Ok((
+        price_period.get_period_id_start(curr_period_id)?.into(),
+        delta?,
+    ))
 }
 
 /// Decides whether the period change took place.
@@ -1156,8 +1171,8 @@ impl<T: Config> OnPriceSet for Module<T> {
 
         let period_start = update.map(|x| x.period_start);
         let price_period = PricePeriod(T::PricePeriod::get());
-        let period_change =
-            get_period_change(&price_period, period_start, now.into()).map_err(Into::<Error<T>>::into)?;
+        let period_change = get_period_change(&price_period, period_start, now.into())
+            .map_err(Into::<Error<T>>::into)?;
 
         let period_start = period_change.period_start;
 

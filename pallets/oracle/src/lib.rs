@@ -1,11 +1,13 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+use core::convert::TryInto;
 use financial_primitives::OnPriceSet;
 use frame_support::codec::Codec;
 use frame_support::dispatch::Parameter;
-use frame_support::{decl_error, decl_event, decl_module, decl_storage, dispatch, traits::Get, weights::Weight};
+use frame_support::{
+    decl_error, decl_event, decl_module, decl_storage, dispatch, traits::Get, weights::Weight,
+};
 use frame_system::ensure_signed;
-use core::convert::TryInto;
 
 #[cfg(test)]
 mod mock;

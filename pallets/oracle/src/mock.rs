@@ -1,5 +1,6 @@
 use crate::{Config, Module};
 use common::Asset;
+use core::convert::{TryFrom, TryInto};
 use financial_primitives::OnPriceSet;
 use frame_support::dispatch::DispatchError;
 use frame_support::traits::ConstU32;
@@ -10,7 +11,6 @@ use sp_runtime::{
     testing::Header,
     traits::{BlakeTwo256, IdentityLookup},
 };
-use core::convert::{TryFrom, TryInto};
 
 use crate as oracle;
 
@@ -33,7 +33,7 @@ type AccountId = u64;
 parameter_types! {
     pub const BlockHashCount: u64 = 250;
     pub BlockWeights: frame_system::limits::BlockWeights =
-        frame_system::limits::BlockWeights::simple_max(Weight::from_ref_time(1024)); 
+        frame_system::limits::BlockWeights::simple_max(Weight::from_ref_time(1024));
 }
 impl frame_system::Config for Test {
     type BaseCallFilter = ();

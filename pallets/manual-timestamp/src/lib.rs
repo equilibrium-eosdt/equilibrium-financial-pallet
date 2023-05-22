@@ -1,9 +1,11 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use frame_support::traits::UnixTime;
-use frame_support::{decl_error, decl_event, decl_module, decl_storage, dispatch, traits::Get, weights::Weight};
-use frame_system::ensure_signed;
 use core::convert::TryInto;
+use frame_support::traits::UnixTime;
+use frame_support::{
+    decl_error, decl_event, decl_module, decl_storage, dispatch, traits::Get, weights::Weight,
+};
+use frame_system::ensure_signed;
 
 #[cfg(test)]
 mod mock;

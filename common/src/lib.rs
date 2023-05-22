@@ -5,7 +5,9 @@ use frame_support::codec::{Decode, Encode};
 #[cfg(feature = "std")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Encode, Decode, Debug, PartialEq, Eq, Clone, Copy, Hash, Ord, PartialOrd, scale_info::TypeInfo)]
+#[derive(
+    Encode, Decode, Debug, PartialEq, Eq, Clone, Copy, Hash, Ord, PartialOrd, scale_info::TypeInfo,
+)]
 #[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
 pub enum Asset {
     Unknown,
