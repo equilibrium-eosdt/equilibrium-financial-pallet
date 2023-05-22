@@ -405,7 +405,7 @@ mod tests;
 /// The module configuration trait.
 pub trait Config: frame_system::Config {
     /// The overarching event type.
-    type Event: From<Event<Self>> + Into<<Self as frame_system::Config>::Event>;
+    type RuntimeEvent: From<Event<Self>> + Into<<Self as frame_system::Config>::Event>;
     /// Implementation for the current unix timestamp provider. The
     /// [`pallet_timestamp`](https://crates.parity.io/pallet_timestamp/index.html) is
     /// right choice in most cases.
