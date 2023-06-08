@@ -405,7 +405,7 @@ mod tests;
 /// The module configuration trait.
 pub trait Config: frame_system::Config {
     /// The overarching event type.
-    type Event: From<Event<Self>> + Into<<Self as frame_system::Config>::Event>;
+    type RuntimeEvent: From<Event<Self>> + Into<<Self as frame_system::Config>::RuntimeEvent>;
     /// Implementation for the current unix timestamp provider. The
     /// [`pallet_timestamp`](https://crates.parity.io/pallet_timestamp/index.html) is
     /// right choice in most cases.
@@ -725,7 +725,7 @@ decl_error! {
 
 decl_module! {
     /// Financial Pallet module declaration.
-    pub struct Module<T: Config> for enum Call where origin: T::Origin {
+    pub struct Module<T: Config> for enum Call where origin: T::RuntimeOrigin {
         type Error = Error<T>;
 
         fn deposit_event() = default;
@@ -839,7 +839,7 @@ impl<T: Config> FinancialSystemTrait for Module<T> {
 
         Metrics::<T>::put(metrics);
 
-        Self::deposit_event(RawEvent::MetricsRecalculated());
+        Self::deposit_event(RawEvent::<T::Asset, T::AccountId>::MetricsRecalculated());
 
         Ok(())
     }
@@ -925,7 +925,7 @@ impl<T: Config> FinancialSystemTrait for Module<T> {
             },
         );
 
-        Self::deposit_event(RawEvent::AssetMetricsRecalculated(asset));
+        Self::deposit_event(RawEvent::<T::Asset, T::AccountId>::AssetMetricsRecalculated(asset));
 
         Ok(())
     }
@@ -991,7 +991,9 @@ impl<T: Config> FinancialSystemTrait for Module<T> {
             },
         );
 
-        Self::deposit_event(RawEvent::PortfolioMetricsRecalculated(account_id));
+        Self::deposit_event(
+            RawEvent::<T::Asset, T::AccountId>::PortfolioMetricsRecalculated(account_id),
+        );
 
         Ok(())
     }
