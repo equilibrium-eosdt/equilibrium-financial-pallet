@@ -366,7 +366,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use codec::{Decode, Encode};
-use sp_runtime::DispatchError;
 use core::ops::{AddAssign, BitOrAssign, ShlAssign};
 use financial_primitives::capvec::CapVec;
 use financial_primitives::{
@@ -380,6 +379,7 @@ use math::{
     mean, mul, regular_corr, regular_value_at_risk, regular_vola, squared, sum, ConstType,
     MathError, MathResult,
 };
+use sp_runtime::DispatchError;
 use sp_std::cmp::{max, min};
 use sp_std::convert::{TryFrom, TryInto};
 use sp_std::iter::Iterator;
@@ -428,7 +428,7 @@ pub mod pallet {
         /// Default type of calculation for volatility and correlation: Regular or Exponential.
         type VolCorType: Get<i64>;
         /// System wide type for representing various assets such as BTC, ETH, EOS, etc.
-        type Asset: Parameter + Copy + Ord + Eq;
+        type Asset: Parameter + Copy + Ord + Eq + MaybeSerializeDeserialize;
         /// Primitive integer type that [`FixedNumber`](#associatedtype.FixedNumber) based on.
         type FixedNumberBits: Copy + ToFixed + AddAssign + BitOrAssign + ShlAssign;
         /// Fixed point data type with a required precision that used for all financial calculations.
@@ -441,7 +441,11 @@ pub mod pallet {
             + scale_info::TypeInfo;
         /// System wide type for representing price values. It must be convertible to and
         /// from [`FixedNumber`](#associatedtype.FixedNumber).
-        type Price: Parameter + Clone + From<Self::FixedNumber> + Into<Self::FixedNumber>;
+        type Price: Parameter
+            + Clone
+            + From<Self::FixedNumber>
+            + Into<Self::FixedNumber>
+            + MaybeSerializeDeserialize;
         /// Type that gets user balances for a given AccountId
         type Balances: BalanceAware<
             AccountId = Self::AccountId,
@@ -463,24 +467,14 @@ pub mod pallet {
     /// Financial metrics on per asset basis.
     #[pallet::storage]
     #[pallet::getter(fn per_asset_metrics)]
-    pub type PerAssetMetrics<T: Config> = StorageMap<
-        _,
-        Blake2_128Concat,
-        T::Asset,
-        AssetMetrics<T::Asset, T::Price>,
-        OptionQuery,
-    >;
+    pub type PerAssetMetrics<T: Config> =
+        StorageMap<_, Blake2_128Concat, T::Asset, AssetMetrics<T::Asset, T::Price>, OptionQuery>;
 
     /// Financial metrics on per portfolio basis.
     #[pallet::storage]
     #[pallet::getter(fn per_portfolio_metrics)]
-    pub type PerPortfolioMetrics<T: Config> = StorageMap<
-        _,
-        Blake2_128Concat,
-        T::AccountId,
-        PortfolioMetrics<T::Price>,
-        OptionQuery,
-    >;
+    pub type PerPortfolioMetrics<T: Config> =
+        StorageMap<_, Blake2_128Concat, T::AccountId, PortfolioMetrics<T::Price>, OptionQuery>;
 
     /// Financial metrics for all known assets.
     #[pallet::storage]
@@ -611,7 +605,6 @@ pub mod pallet {
         pub prices: Vec<(T::Asset, Vec<T::Price>, core::time::Duration)>,
     }
 
-    #[cfg(feature = "std")]
     impl<T: Config> Default for GenesisConfig<T> {
         fn default() -> Self {
             Self {
@@ -621,7 +614,7 @@ pub mod pallet {
     }
 
     #[pallet::genesis_build]
-    impl<T: Config> BuildGenesisConfig<T> for GenesisConfig<T> {
+    impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
         fn build(&self) {
             let max_price_count = 180;
             // Limit max value of `PricePeriod` to 7 days
@@ -867,9 +860,7 @@ impl<T: Config> FinancialSystemTrait for Pallet<T> {
             },
         );
 
-        Self::deposit_event(
-            Event::PortfolioMetricsRecalculated(account_id),
-        );
+        Self::deposit_event(Event::PortfolioMetricsRecalculated(account_id));
 
         Ok(())
     }
