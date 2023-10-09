@@ -5,9 +5,9 @@ name = 'common'
 version = '0.1.0'
 
 [dependencies.frame-support]
-default-features = false
 git = "https://github.com/paritytech/polkadot-sdk"
 branch = "release-polkadot-v1.1.0"
+default-features = false
 
 [dependencies.scale-info]
 version = "2.0.1"

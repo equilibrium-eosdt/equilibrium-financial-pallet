@@ -15,7 +15,7 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use frame_support::codec::{Decode, Encode};
+use codec::{Decode, Encode};
 use sp_std::ops::Range;
 use sp_std::prelude::Vec;
 

@@ -25,7 +25,7 @@
 pub mod capvec;
 
 use core::time::Duration;
-use frame_support::dispatch::DispatchError;
+use frame_support::sp_runtime::DispatchError;
 use sp_std::convert::{From, TryFrom};
 use sp_std::vec::Vec;
 
