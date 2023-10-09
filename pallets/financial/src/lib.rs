@@ -529,7 +529,7 @@ pub mod pallet {
     impl<T: Config> Pallet<T> {
         /// Recalculates financial metrics for a given asset
         #[pallet::call_index(0)]
-        #[pallet::weight(Weight::from_parts(0, 10_000).saturating_add(T::DbWeight::get().writes(1)))]
+        #[pallet::weight(Weight::from_parts(10_000, 0).saturating_add(T::DbWeight::get().writes(1)))]
         pub fn recalc_asset(origin: OriginFor<T>, asset: T::Asset) -> DispatchResult {
             ensure_signed(origin)?;
             Self::recalc_asset_inner(asset)?;
@@ -538,7 +538,7 @@ pub mod pallet {
 
         /// Recalculates financial metrics for a given portfolio
         #[pallet::call_index(1)]
-        #[pallet::weight(Weight::from_parts(0, 10_000).saturating_add(T::DbWeight::get().writes(1)))]
+        #[pallet::weight(Weight::from_parts(10_000, 0).saturating_add(T::DbWeight::get().writes(1)))]
         pub fn recalc_portfolio(
             origin: OriginFor<T>,
             account_id: T::AccountId,
@@ -551,7 +551,7 @@ pub mod pallet {
 
         /// Recalculates financial metrics for all known assets.
         #[pallet::call_index(2)]
-        #[pallet::weight(Weight::from_parts(0, 10_000).saturating_add(T::DbWeight::get().writes(1)))]
+        #[pallet::weight(Weight::from_parts(10_000, 0).saturating_add(T::DbWeight::get().writes(1)))]
         pub fn recalc(origin: OriginFor<T>) -> DispatchResult {
             ensure_signed(origin)?;
             Self::recalc_inner()?;
@@ -560,7 +560,7 @@ pub mod pallet {
 
         /// Test utility function for setting metrics, not allowed in production
         #[pallet::call_index(3)]
-        #[pallet::weight(Weight::from_parts(0, 10_000).saturating_add(T::DbWeight::get().writes(1)))]
+        #[pallet::weight(Weight::from_parts(10_000, 0).saturating_add(T::DbWeight::get().writes(1)))]
         pub fn set_metrics(
             _origin: OriginFor<T>,
             metrics: FinancialMetrics<T::Asset, T::Price>,
