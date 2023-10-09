@@ -196,11 +196,11 @@
 //! #     use financial_primitives::BalanceAware;
 //! #     use crate::{Asset, Balance, AccountId};
 //! #
-//! #     pub struct Module<T> {
+//! #     pub struct Pallet<T> {
 //! #         _marker: sp_std::marker::PhantomData<T>,
 //! #     }
 //! #
-//! #     impl <T> BalanceAware for Module<T> {
+//! #     impl <T> BalanceAware for Pallet<T> {
 //! #         type AccountId = AccountId;
 //! #         type Asset = Asset;
 //! #         type Balance = Balance;
@@ -286,10 +286,10 @@
 //! #     use core::time::Duration;
 //! #     use frame_support::traits::UnixTime;
 //! #
-//! #     pub struct Module<T> {
+//! #     pub struct Pallet<T> {
 //! #         _marker: sp_std::marker::PhantomData<T>,
 //! #     }
-//! #     impl <T> UnixTime for Module<T> {
+//! #     impl <T> UnixTime for Pallet<T> {
 //! #         fn now() -> Duration {
 //! #             Duration::new(5, 0)
 //! #         }
@@ -365,18 +365,15 @@
 #![warn(missing_docs)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
+use codec::{Decode, Encode};
+use sp_runtime::DispatchError;
 use core::ops::{AddAssign, BitOrAssign, ShlAssign};
 use financial_primitives::capvec::CapVec;
 use financial_primitives::{
     BalanceAware, CalcReturnType, CalcVolatilityType, OnPriceSet, PricePeriod, PricePeriodError,
 };
-use frame_support::codec::{Decode, Encode, FullCodec};
-use frame_support::dispatch::{DispatchError, Parameter};
-use frame_support::storage::{IterableStorageMap, StorageMap};
 use frame_support::traits::{Get, UnixTime};
-use frame_support::weights::Weight;
-use frame_support::{decl_error, decl_event, decl_module, decl_storage, dispatch, ensure};
-use frame_system::ensure_signed;
+use frame_support::{dispatch, ensure};
 use math::{
     calc_log_return, calc_return_exp_vola, calc_return_func, calc_return_iter, covariance, decay,
     demeaned, exp_corr, exp_vola, from_num, last_price, last_recurrent_ewma, log_value_at_risk,
@@ -401,300 +398,111 @@ mod mock;
 
 #[cfg(test)]
 mod tests;
+pub use pallet::*;
 
-/// The module configuration trait.
-pub trait Config: frame_system::Config {
-    /// The overarching event type.
-    type RuntimeEvent: From<Event<Self>> + Into<<Self as frame_system::Config>::RuntimeEvent>;
-    /// Implementation for the current unix timestamp provider. The
-    /// [`pallet_timestamp`](https://crates.parity.io/pallet_timestamp/index.html) is
-    /// right choice in most cases.
-    type UnixTime: UnixTime;
-    /// Number of price data points stored and used for calculations.
-    type PriceCount: Get<u32>;
-    /// The period of the collected prices in minutes.
-    type PricePeriod: Get<u32>;
-    /// Default type of calculation for return: Regular or Log.
-    type ReturnType: Get<u32>;
-    /// Default type of calculation for volatility and correlation: Regular or Exponential.
-    type VolCorType: Get<i64>;
-    /// System wide type for representing various assets such as BTC, ETH, EOS, etc.
-    type Asset: Parameter + Copy + Ord + Eq;
-    /// Primitive integer type that [`FixedNumber`](#associatedtype.FixedNumber) based on.
-    type FixedNumberBits: Copy + ToFixed + AddAssign + BitOrAssign + ShlAssign;
-    /// Fixed point data type with a required precision that used for all financial calculations.
-    type FixedNumber: Clone
-        + Copy
-        + FullCodec
-        + FixedSigned<Bits = Self::FixedNumberBits>
-        + PartialOrd<ConstType>
-        + From<ConstType>
-        + scale_info::TypeInfo;
-    /// System wide type for representing price values. It must be convertible to and
-    /// from [`FixedNumber`](#associatedtype.FixedNumber).
-    type Price: Parameter + Clone + From<Self::FixedNumber> + Into<Self::FixedNumber>;
-    /// Type that gets user balances for a given AccountId
-    type Balances: BalanceAware<
-        AccountId = Self::AccountId,
-        Asset = Self::Asset,
-        Balance = Self::Price,
+#[frame_support::pallet]
+pub mod pallet {
+    use super::*;
+    use frame_support::pallet_prelude::*;
+    use frame_system::pallet_prelude::*;
+
+    #[pallet::pallet]
+    #[pallet::without_storage_info]
+    pub struct Pallet<T>(_);
+
+    /// The module configuration trait.
+    #[pallet::config]
+    pub trait Config: frame_system::Config {
+        /// The overarching event type.
+        type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
+        /// Implementation for the current unix timestamp provider. The
+        /// [`pallet_timestamp`](https://crates.parity.io/pallet_timestamp/index.html) is
+        /// right choice in most cases.
+        type UnixTime: UnixTime;
+        /// Number of price data points stored and used for calculations.
+        type PriceCount: Get<u32>;
+        /// The period of the collected prices in minutes.
+        type PricePeriod: Get<u32>;
+        /// Default type of calculation for return: Regular or Log.
+        type ReturnType: Get<u32>;
+        /// Default type of calculation for volatility and correlation: Regular or Exponential.
+        type VolCorType: Get<i64>;
+        /// System wide type for representing various assets such as BTC, ETH, EOS, etc.
+        type Asset: Parameter + Copy + Ord + Eq;
+        /// Primitive integer type that [`FixedNumber`](#associatedtype.FixedNumber) based on.
+        type FixedNumberBits: Copy + ToFixed + AddAssign + BitOrAssign + ShlAssign;
+        /// Fixed point data type with a required precision that used for all financial calculations.
+        type FixedNumber: Clone
+            + Copy
+            + codec::FullCodec
+            + FixedSigned<Bits = Self::FixedNumberBits>
+            + PartialOrd<ConstType>
+            + From<ConstType>
+            + scale_info::TypeInfo;
+        /// System wide type for representing price values. It must be convertible to and
+        /// from [`FixedNumber`](#associatedtype.FixedNumber).
+        type Price: Parameter + Clone + From<Self::FixedNumber> + Into<Self::FixedNumber>;
+        /// Type that gets user balances for a given AccountId
+        type Balances: BalanceAware<
+            AccountId = Self::AccountId,
+            Asset = Self::Asset,
+            Balance = Self::Price,
+        >;
+    }
+
+    /// Latest price updates on per asset basis.
+    #[pallet::storage]
+    #[pallet::getter(fn updates)]
+    pub type Updates<T: Config> =
+        StorageMap<_, Blake2_128Concat, T::Asset, PriceUpdate<T::FixedNumber>, OptionQuery>;
+    /// Price log on per asset basis.
+    #[pallet::storage]
+    #[pallet::getter(fn price_logs)]
+    pub type PriceLogs<T: Config> =
+        StorageMap<_, Blake2_128Concat, T::Asset, PriceLog<T::FixedNumber>, OptionQuery>;
+    /// Financial metrics on per asset basis.
+    #[pallet::storage]
+    #[pallet::getter(fn per_asset_metrics)]
+    pub type PerAssetMetrics<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        T::Asset,
+        AssetMetrics<T::Asset, T::Price>,
+        OptionQuery,
     >;
-}
 
-#[derive(
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Default,
-    Encode,
-    Decode,
-    Debug,
-    scale_info::TypeInfo,
-)]
-pub struct Duration {
-    secs: u64,
-    nanos: u32,
-}
+    /// Financial metrics on per portfolio basis.
+    #[pallet::storage]
+    #[pallet::getter(fn per_portfolio_metrics)]
+    pub type PerPortfolioMetrics<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        PortfolioMetrics<T::Price>,
+        OptionQuery,
+    >;
 
-impl Duration {
-    const NANOS_PER_SEC: u32 = 1_000_000_000;
+    /// Financial metrics for all known assets.
+    #[pallet::storage]
+    #[pallet::getter(fn metrics)]
+    pub type Metrics<T: Config> =
+        StorageValue<_, FinancialMetrics<T::Asset, T::Price>, OptionQuery>;
 
-    ///
-    pub const fn new(secs: u64, nanos: u32) -> Duration {
-        let secs = match secs.checked_add((nanos / Self::NANOS_PER_SEC) as u64) {
-            Some(secs) => secs,
-            None => panic!("overflow in Duration::new"),
-        };
-        let nanos = nanos % Self::NANOS_PER_SEC;
-        Duration { secs, nanos }
-    }
-
-    ///
-    pub const fn from_secs(secs: u64) -> Duration {
-        Duration { secs, nanos: 0 }
-    }
-
-    ///
-    pub const fn checked_add(self, rhs: Duration) -> Option<Duration> {
-        if let Some(mut secs) = self.secs.checked_add(rhs.secs) {
-            let mut nanos = self.nanos + rhs.nanos;
-            if nanos >= Self::NANOS_PER_SEC {
-                nanos -= Self::NANOS_PER_SEC;
-                if let Some(new_secs) = secs.checked_add(1) {
-                    secs = new_secs;
-                } else {
-                    return None;
-                }
-            }
-            debug_assert!(nanos < Self::NANOS_PER_SEC);
-            Some(Duration { secs, nanos })
-        } else {
-            None
-        }
-    }
-}
-
-impl core::ops::Add for Duration {
-    type Output = Duration;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        self.checked_add(rhs)
-            .expect("overflow when adding durations")
-    }
-}
-
-impl From<core::time::Duration> for Duration {
-    fn from(duration: core::time::Duration) -> Self {
-        Self {
-            secs: duration.as_secs(),
-            nanos: duration.subsec_nanos(),
-        }
-    }
-}
-
-impl From<Duration> for core::time::Duration {
-    fn from(this: Duration) -> Self {
-        Self::new(this.secs, this.nanos)
-    }
-}
-
-/// Information about latest price update.
-#[derive(Encode, Decode, Clone, Default, PartialEq, Eq, Debug, scale_info::TypeInfo)]
-pub struct PriceUpdate<P> {
-    /// Timestamp of the price period start for the latest price received.
-    pub period_start: Duration,
-    /// Latest price timestamp.
-    pub time: Duration,
-    /// Latest price value.
-    pub price: P,
-}
-
-impl<P> PriceUpdate<P> {
-    #[cfg(test)]
-    fn new(period_start: Duration, time: Duration, price: P) -> PriceUpdate<P> {
-        PriceUpdate {
-            period_start,
-            time,
-            price,
-        }
-    }
-}
-
-/// History of price changes for asset
-#[derive(Encode, Decode, Clone, Default, PartialEq, Eq, Debug, scale_info::TypeInfo)]
-pub struct PriceLog<F> {
-    /// Timestamp of the latest point in the log.
-    pub latest_timestamp: Duration,
-    /// History of prices changes for last [`PriceCount`](./trait.Config.html#associatedtype.PriceCount) periods in succession.
-    pub prices: CapVec<F>,
-}
-
-/// Financial metrics for asset
-#[derive(Encode, Decode, Clone, Default, PartialEq, Eq, Debug, scale_info::TypeInfo)]
-pub struct AssetMetrics<A, P> {
-    /// Start of the period inclusive for which metrics were calculated.
-    pub period_start: Duration,
-    /// End of the period exclusive for which metrics were calculated.
-    pub period_end: Duration,
-    /// Log returns
-    pub returns: Vec<P>,
-    /// Volatility
-    pub volatility: P,
-    /// Correlations for all assets
-    pub correlations: Vec<(A, P)>,
-}
-
-/// Financial metrics for portfolio
-#[derive(Encode, Decode, Clone, Default, PartialEq, Eq, Debug, scale_info::TypeInfo)]
-pub struct PortfolioMetrics<P> {
-    /// Start of the period inclusive for which metrics were calculated.
-    pub period_start: Duration,
-    /// End of the period exclusive for which metrics were calculated.
-    pub period_end: Duration,
-
-    ///  Number of standard deviations to consider.
-    pub z_score: u32,
-
-    /// Portfolio volatility
-    pub volatility: P,
-    /// Value at Risk for portfolio
-    pub value_at_risk: P,
-}
-
-/// Financial metrics for all assets
-#[derive(Encode, Decode, Clone, Default, PartialEq, Eq, Debug, scale_info::TypeInfo)]
-pub struct FinancialMetrics<A, P> {
-    /// Start of the period inclusive for which metrics were calculated.
-    pub period_start: Duration,
-    /// End of the period exclusive for which metrics were calculated.
-    pub period_end: Duration,
-
-    /// Assets for which metrics were calculated.
-    pub assets: Vec<A>,
-
-    /// Mean returns for all assets. Mean returns are in the same order as the assets in the `assets` field.
-    pub mean_returns: Vec<P>,
-
-    /// Volatilities for all assets. Volatilities are in the same order as the assets in the `assets` field.
-    pub volatilities: Vec<P>,
-
-    /// Correlation matrix for all assets.
-    /// Rows and columns are in the same order as the assets in the `assets` field.
-    /// Matrix is stored by rows. For example, let matrix A =
-    ///
-    /// ```pseudocode
-    /// a11 a12 a13
-    /// a21 a22 a21
-    /// a31 a32 a33
-    /// ```
-    ///
-    /// Then vector for this matrix will be:
-    ///
-    /// ```pseudocode
-    /// vec![a11, a12, a13, a21, a22, a23, a31, a32, a33]
-    /// ```
-    pub correlations: Vec<P>,
-
-    /// Covariance matrix for all assets.
-    /// Rows and columns are in the same order as the assets in the `assets` field.
-    /// Matrix is stored by rows. See example for `correlations` field.
-    pub covariances: Vec<P>,
-}
-
-decl_storage! {
-    trait Store for Module<T: Config> as FinancialModule {
-        /// Latest price updates on per asset basis.
-        pub Updates get(fn updates): map hasher(blake2_128_concat) T::Asset => Option<PriceUpdate<T::FixedNumber>>;
-        /// Price log on per asset basis.
-        pub PriceLogs get(fn price_logs): map hasher(blake2_128_concat) T::Asset => Option<PriceLog<T::FixedNumber>>;
-        /// Financial metrics on per asset basis.
-        pub PerAssetMetrics get(fn per_asset_metrics): map hasher(blake2_128_concat) T::Asset => Option<AssetMetrics<T::Asset, T::Price>>;
-
-        /// Financial metrics on per portfolio basis.
-        pub PerPortfolioMetrics get(fn per_portfolio_metrics): map hasher(blake2_128_concat) T::AccountId => Option<PortfolioMetrics<T::Price>>;
-
-        /// Financial metrics for all known assets.
-        pub Metrics get(fn metrics): Option<FinancialMetrics<T::Asset, T::Price>>;
-    }
-
-    add_extra_genesis {
-        /// Initial price logs on per asset basis.
-        config(prices): Vec<(T::Asset, Vec<T::Price>, core::time::Duration)>;
-        build(|config| {
-            let max_price_count = 180;
-            // Limit max value of `PricePeriod` to 7 days
-            let max_price_period = 7 * 24 * 60;
-
-            let price_count = T::PriceCount::get();
-            assert!(price_count <= max_price_count, "PriceCount can not be greater than {}", max_price_count);
-
-            let price_period = T::PricePeriod::get();
-            assert!(price_period <= max_price_period, "PricePeriod can not be greater than {}", max_price_period);
-
-            // We assume that each config item for a given asset contains prices of the past periods going in
-            // succession. Timestamp of the last period is specified in `latest_timestamp`.
-            for (asset, values, latest_timestamp) in config.prices.iter() {
-                let mut prices = CapVec::<T::FixedNumber>::new(price_count);
-
-                assert!(values.len() > 0, "Initial price vector can not be empty. Asset: {:?}.", asset);
-
-                for v in values.iter() {
-                    prices.push(v.clone().into());
-                }
-
-                PriceLogs::<T>::insert(asset, PriceLog {
-                    latest_timestamp: Into::<Duration>::into(*latest_timestamp),
-                    prices
-                });
-            }
-        });
-    }
-}
-
-decl_event!(
-    pub enum Event<T>
-    where
-        Asset = <T as Config>::Asset,
-        AccountId = <T as frame_system::Config>::AccountId,
-    {
+    #[pallet::event]
+    #[pallet::generate_deposit(pub(super) fn deposit_event)]
+    pub enum Event<T: Config> {
         /// Financial metrics for the specified asset have been recalculated
         /// \[asset\]
-        AssetMetricsRecalculated(Asset),
+        AssetMetricsRecalculated(T::Asset),
         /// Financial metrics for all assets have been recalculated
-        MetricsRecalculated(),
+        MetricsRecalculated,
         /// Financial metrics for the specified portfolio have been recalculated
         /// \[portfolio\]
-        PortfolioMetricsRecalculated(AccountId),
+        PortfolioMetricsRecalculated(T::AccountId),
     }
-);
 
-decl_error! {
-    /// Error for the Financial Pallet module.
-    pub enum Error for Module<T: Config> {
+    #[pallet::error]
+    pub enum Error<T> {
         /// Timestamp of the received price is in the past.
         PeriodIsInThePast,
         /// Overflow occurred during financial calculation process.
@@ -721,45 +529,48 @@ decl_error! {
         /// This method is not allowed in production. Method is used in testing only
         MethodNotAllowed,
     }
-}
 
-decl_module! {
     /// Financial Pallet module declaration.
-    pub struct Module<T: Config> for enum Call where origin: T::RuntimeOrigin {
-        type Error = Error<T>;
-
-        fn deposit_event() = default;
-
-        const PriceCount: u32 = T::PriceCount::get();
-        const PricePeriod: u32 = T::PricePeriod::get();
-
+    #[pallet::call]
+    impl<T: Config> Pallet<T> {
         /// Recalculates financial metrics for a given asset
-        #[weight = Weight::from_ref_time(10_000).saturating_add(T::DbWeight::get().writes(1))]
-        pub fn recalc_asset(origin, asset: T::Asset) -> dispatch::DispatchResult {
+        #[pallet::call_index(0)]
+        #[pallet::weight(Weight::from_parts(0, 10_000).saturating_add(T::DbWeight::get().writes(1)))]
+        pub fn recalc_asset(origin: OriginFor<T>, asset: T::Asset) -> DispatchResult {
             ensure_signed(origin)?;
             Self::recalc_asset_inner(asset)?;
             Ok(())
         }
 
         /// Recalculates financial metrics for a given portfolio
-        #[weight = Weight::from_ref_time(10_000).saturating_add(T::DbWeight::get().writes(1))]
-        pub fn recalc_portfolio(origin, account_id: T::AccountId, z_score: u32) -> dispatch::DispatchResult {
+        #[pallet::call_index(1)]
+        #[pallet::weight(Weight::from_parts(0, 10_000).saturating_add(T::DbWeight::get().writes(1)))]
+        pub fn recalc_portfolio(
+            origin: OriginFor<T>,
+            account_id: T::AccountId,
+            z_score: u32,
+        ) -> DispatchResult {
             ensure_signed(origin)?;
             Self::recalc_portfolio_inner(account_id, z_score)?;
             Ok(())
         }
 
         /// Recalculates financial metrics for all known assets.
-        #[weight = Weight::from_ref_time(10_000).saturating_add(T::DbWeight::get().writes(1))]
-        pub fn recalc(origin) -> dispatch::DispatchResult {
+        #[pallet::call_index(2)]
+        #[pallet::weight(Weight::from_parts(0, 10_000).saturating_add(T::DbWeight::get().writes(1)))]
+        pub fn recalc(origin: OriginFor<T>) -> DispatchResult {
             ensure_signed(origin)?;
             Self::recalc_inner()?;
             Ok(())
         }
 
         /// Test utility function for setting metrics, not allowed in production
-        #[weight = Weight::from_ref_time(10_000).saturating_add(T::DbWeight::get().writes(1))]
-        pub fn set_metrics(origin, metrics: FinancialMetrics<T::Asset, T::Price>) -> dispatch::DispatchResult {
+        #[pallet::call_index(3)]
+        #[pallet::weight(Weight::from_parts(0, 10_000).saturating_add(T::DbWeight::get().writes(1)))]
+        pub fn set_metrics(
+            _origin: OriginFor<T>,
+            metrics: FinancialMetrics<T::Asset, T::Price>,
+        ) -> DispatchResult {
             if cfg!(feature = "production") {
                 log::error!(
                     "{}:{}. Setting metrics is not allowed in production",
@@ -774,9 +585,14 @@ decl_module! {
         }
 
         /// Test utility function for setting asset metrics, not allowed in production
-        #[weight = Weight::from_ref_time(10_000).saturating_add(T::DbWeight::get().writes(1))]
-        pub fn set_per_asset_metrics(origin, asset: T::Asset, metrics: AssetMetrics<T::Asset, T::Price>) -> dispatch::DispatchResult {
-            if  cfg!(feature = "production") {
+        #[pallet::call_index(4)]
+        #[pallet::weight(Weight::from_parts(0, 10_000).saturating_add(T::DbWeight::get().writes(1)))]
+        pub fn set_per_asset_metrics(
+            _origin: OriginFor<T>,
+            asset: T::Asset,
+            metrics: AssetMetrics<T::Asset, T::Price>,
+        ) -> DispatchResult {
+            if cfg!(feature = "production") {
                 log::error!(
                     "{}:{}. Setting metrics is not allowed in production",
                     file!(),
@@ -788,7 +604,67 @@ decl_module! {
             PerAssetMetrics::<T>::insert(&asset, metrics);
             Ok(())
         }
+    }
 
+    #[pallet::genesis_config]
+    pub struct GenesisConfig<T: Config> {
+        pub prices: Vec<(T::Asset, Vec<T::Price>, core::time::Duration)>,
+    }
+
+    #[cfg(feature = "std")]
+    impl<T: Config> Default for GenesisConfig<T> {
+        fn default() -> Self {
+            Self {
+                prices: Default::default(),
+            }
+        }
+    }
+
+    #[pallet::genesis_build]
+    impl<T: Config> BuildGenesisConfig<T> for GenesisConfig<T> {
+        fn build(&self) {
+            let max_price_count = 180;
+            // Limit max value of `PricePeriod` to 7 days
+            let max_price_period = 7 * 24 * 60;
+
+            let price_count = T::PriceCount::get();
+            assert!(
+                price_count <= max_price_count,
+                "PriceCount can not be greater than {}",
+                max_price_count
+            );
+
+            let price_period = T::PricePeriod::get();
+            assert!(
+                price_period <= max_price_period,
+                "PricePeriod can not be greater than {}",
+                max_price_period
+            );
+
+            // We assume that each config item for a given asset contains prices of the past periods going in
+            // succession. Timestamp of the last period is specified in `latest_timestamp`.
+            for (asset, values, latest_timestamp) in self.prices.iter() {
+                let mut prices = CapVec::<T::FixedNumber>::new(price_count);
+
+                assert!(
+                    values.len() > 0,
+                    "Initial price vector can not be empty. Asset: {:?}.",
+                    asset
+                );
+
+                for v in values.iter() {
+                    prices.push(v.clone().into());
+                }
+
+                PriceLogs::<T>::insert(
+                    asset,
+                    PriceLog {
+                        latest_timestamp: Into::<Duration>::into(*latest_timestamp),
+                        prices,
+                    },
+                );
+            }
+        }
     }
 }
 
@@ -813,7 +689,7 @@ pub trait FinancialSystemTrait {
     ) -> dispatch::DispatchResult;
 }
 
-impl<T: Config> FinancialSystemTrait for Module<T> {
+impl<T: Config> FinancialSystemTrait for Pallet<T> {
     type Asset = T::Asset;
     type AccountId = T::AccountId;
 
@@ -839,7 +715,7 @@ impl<T: Config> FinancialSystemTrait for Module<T> {
 
         Metrics::<T>::put(metrics);
 
-        Self::deposit_event(RawEvent::<T::Asset, T::AccountId>::MetricsRecalculated());
+        Self::deposit_event(Event::MetricsRecalculated);
 
         Ok(())
     }
@@ -925,7 +801,7 @@ impl<T: Config> FinancialSystemTrait for Module<T> {
             },
         );
 
-        Self::deposit_event(RawEvent::<T::Asset, T::AccountId>::AssetMetricsRecalculated(asset));
+        Self::deposit_event(Event::AssetMetricsRecalculated(asset));
 
         Ok(())
     }
@@ -992,7 +868,7 @@ impl<T: Config> FinancialSystemTrait for Module<T> {
         );
 
         Self::deposit_event(
-            RawEvent::<T::Asset, T::AccountId>::PortfolioMetricsRecalculated(account_id),
+            Event::PortfolioMetricsRecalculated(account_id),
         );
 
         Ok(())
@@ -1151,7 +1027,7 @@ fn get_period_change(
     }
 }
 
-impl<T: Config> OnPriceSet for Module<T> {
+impl<T: Config> OnPriceSet for Pallet<T> {
     type Asset = T::Asset;
     type Price = T::Price;
 
@@ -1716,7 +1592,7 @@ fn get_prices_for_common_periods<T: Config>(
     Ok((prices1, prices2, temporal_range))
 }
 
-impl<T: Config> Financial for Module<T> {
+impl<T: Config> Financial for Pallet<T> {
     type Asset = T::Asset;
     type Price = T::Price;
     type AccountId = <T as frame_system::Config>::AccountId;
@@ -1887,4 +1763,188 @@ impl<T: Config> Financial for Module<T> {
             }
         }
     }
+}
+
+#[derive(
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Encode,
+    Decode,
+    Debug,
+    scale_info::TypeInfo,
+)]
+pub struct Duration {
+    secs: u64,
+    nanos: u32,
+}
+
+impl Duration {
+    const NANOS_PER_SEC: u32 = 1_000_000_000;
+
+    ///
+    pub const fn new(secs: u64, nanos: u32) -> Duration {
+        let secs = match secs.checked_add((nanos / Self::NANOS_PER_SEC) as u64) {
+            Some(secs) => secs,
+            None => panic!("overflow in Duration::new"),
+        };
+        let nanos = nanos % Self::NANOS_PER_SEC;
+        Duration { secs, nanos }
+    }
+
+    ///
+    pub const fn from_secs(secs: u64) -> Duration {
+        Duration { secs, nanos: 0 }
+    }
+
+    ///
+    pub const fn checked_add(self, rhs: Duration) -> Option<Duration> {
+        if let Some(mut secs) = self.secs.checked_add(rhs.secs) {
+            let mut nanos = self.nanos + rhs.nanos;
+            if nanos >= Self::NANOS_PER_SEC {
+                nanos -= Self::NANOS_PER_SEC;
+                if let Some(new_secs) = secs.checked_add(1) {
+                    secs = new_secs;
+                } else {
+                    return None;
+                }
+            }
+            debug_assert!(nanos < Self::NANOS_PER_SEC);
+            Some(Duration { secs, nanos })
+        } else {
+            None
+        }
+    }
+}
+
+impl core::ops::Add for Duration {
+    type Output = Duration;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        self.checked_add(rhs)
+            .expect("overflow when adding durations")
+    }
+}
+
+impl From<core::time::Duration> for Duration {
+    fn from(duration: core::time::Duration) -> Self {
+        Self {
+            secs: duration.as_secs(),
+            nanos: duration.subsec_nanos(),
+        }
+    }
+}
+
+impl From<Duration> for core::time::Duration {
+    fn from(this: Duration) -> Self {
+        Self::new(this.secs, this.nanos)
+    }
+}
+
+/// Information about latest price update.
+#[derive(Encode, Decode, Clone, Default, PartialEq, Eq, Debug, scale_info::TypeInfo)]
+pub struct PriceUpdate<P> {
+    /// Timestamp of the price period start for the latest price received.
+    pub period_start: Duration,
+    /// Latest price timestamp.
+    pub time: Duration,
+    /// Latest price value.
+    pub price: P,
+}
+
+impl<P> PriceUpdate<P> {
+    #[cfg(test)]
+    fn new(period_start: Duration, time: Duration, price: P) -> PriceUpdate<P> {
+        PriceUpdate {
+            period_start,
+            time,
+            price,
+        }
+    }
+}
+
+/// History of price changes for asset
+#[derive(Encode, Decode, Clone, Default, PartialEq, Eq, Debug, scale_info::TypeInfo)]
+pub struct PriceLog<F> {
+    /// Timestamp of the latest point in the log.
+    pub latest_timestamp: Duration,
+    /// History of prices changes for last [`PriceCount`](./trait.Config.html#associatedtype.PriceCount) periods in succession.
+    pub prices: CapVec<F>,
+}
+
+/// Financial metrics for asset
+#[derive(Encode, Decode, Clone, Default, PartialEq, Eq, Debug, scale_info::TypeInfo)]
+pub struct AssetMetrics<A, P> {
+    /// Start of the period inclusive for which metrics were calculated.
+    pub period_start: Duration,
+    /// End of the period exclusive for which metrics were calculated.
+    pub period_end: Duration,
+    /// Log returns
+    pub returns: Vec<P>,
+    /// Volatility
+    pub volatility: P,
+    /// Correlations for all assets
+    pub correlations: Vec<(A, P)>,
+}
+
+/// Financial metrics for portfolio
+#[derive(Encode, Decode, Clone, Default, PartialEq, Eq, Debug, scale_info::TypeInfo)]
+pub struct PortfolioMetrics<P> {
+    /// Start of the period inclusive for which metrics were calculated.
+    pub period_start: Duration,
+    /// End of the period exclusive for which metrics were calculated.
+    pub period_end: Duration,
+
+    ///  Number of standard deviations to consider.
+    pub z_score: u32,
+
+    /// Portfolio volatility
+    pub volatility: P,
+    /// Value at Risk for portfolio
+    pub value_at_risk: P,
+}
+
+/// Financial metrics for all assets
+#[derive(Encode, Decode, Clone, Default, PartialEq, Eq, Debug, scale_info::TypeInfo)]
+pub struct FinancialMetrics<A, P> {
+    /// Start of the period inclusive for which metrics were calculated.
+    pub period_start: Duration,
+    /// End of the period exclusive for which metrics were calculated.
+    pub period_end: Duration,
+
+    /// Assets for which metrics were calculated.
+    pub assets: Vec<A>,
+
+    /// Mean returns for all assets. Mean returns are in the same order as the assets in the `assets` field.
+    pub mean_returns: Vec<P>,
+
+    /// Volatilities for all assets. Volatilities are in the same order as the assets in the `assets` field.
+    pub volatilities: Vec<P>,
+
+    /// Correlation matrix for all assets.
+    /// Rows and columns are in the same order as the assets in the `assets` field.
+    /// Matrix is stored by rows. For example, let matrix A =
+    ///
+    /// ```pseudocode
+    /// a11 a12 a13
+    /// a21 a22 a21
+    /// a31 a32 a33
+    /// ```
+    ///
+    /// Then vector for this matrix will be:
+    ///
+    /// ```pseudocode
+    /// vec![a11, a12, a13, a21, a22, a23, a31, a32, a33]
+    /// ```
+    pub correlations: Vec<P>,
+
+    /// Covariance matrix for all assets.
+    /// Rows and columns are in the same order as the assets in the `assets` field.
+    /// Matrix is stored by rows. See example for `correlations` field.
+    pub covariances: Vec<P>,
 }
