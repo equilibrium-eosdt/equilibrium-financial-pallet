@@ -11,12 +11,12 @@ scale-info = { version = "2.0.1", default-features = false, features = ["derive"
 [dependencies.frame-support]
 default-features = false
 git = "https://github.com/paritytech/polkadot-sdk"
-branch = "release-polkadot-v1.1.0"
+branch = "release-polkadot-v1.5.0"
 
 [dependencies.sp-std]
 default-features = false
 git = "https://github.com/paritytech/polkadot-sdk"
-branch = "release-polkadot-v1.1.0"
+branch = "release-polkadot-v1.5.0"
 
 [dependencies.codec]
 default-features = false

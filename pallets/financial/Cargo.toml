@@ -26,17 +26,17 @@ version = "3.0.0"
 [dependencies.frame-support]
 default-features = false
 git = "https://github.com/paritytech/polkadot-sdk"
-branch = "release-polkadot-v1.1.0"
+branch = "release-polkadot-v1.5.0"
 
 [dependencies.frame-system]
 default-features = false
 git = "https://github.com/paritytech/polkadot-sdk"
-branch = "release-polkadot-v1.1.0"
+branch = "release-polkadot-v1.5.0"
 
 [dependencies.sp-runtime]
 default-features = false
 git = "https://github.com/paritytech/polkadot-sdk"
-branch = "release-polkadot-v1.1.0"
+branch = "release-polkadot-v1.5.0"
 
 [dependencies.substrate-fixed]
 default-features = false
@@ -47,7 +47,7 @@ package = "substrate-fixed"
 [dependencies.sp-std]
 default-features = false
 git = "https://github.com/paritytech/polkadot-sdk"
-branch = "release-polkadot-v1.1.0"
+branch = "release-polkadot-v1.5.0"
 
 [dependencies.financial-primitives]
 default-features = false
@@ -58,11 +58,11 @@ version = "0.1.0"
 [dev-dependencies.sp-core]
 default-features = false
 git = "https://github.com/paritytech/polkadot-sdk"
-branch = "release-polkadot-v1.1.0"
+branch = "release-polkadot-v1.5.0"
 
 [dev-dependencies.sp-io]
 git = "https://github.com/paritytech/polkadot-sdk"
-branch = "release-polkadot-v1.1.0"
+branch = "release-polkadot-v1.5.0"
 default-features = false
 
 [dev-dependencies.chrono]
